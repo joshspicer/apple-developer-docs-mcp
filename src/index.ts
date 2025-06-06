@@ -8,6 +8,10 @@ import {
 } from '@modelcontextprotocol/sdk/types.js';
 import fetch from 'node-fetch';
 import * as cheerio from 'cheerio';
+import AdmZip from 'adm-zip';
+import { promises as fs } from 'fs';
+import path from 'path';
+import { tmpdir } from 'os';
 
 interface AppleDocSearchResult {
   title: string;
@@ -68,6 +72,20 @@ class AppleDeveloperDocsMCPServer {
             required: ['url'],
           },
         },
+        {
+          name: 'download_apple_code_sample',
+          description: 'Download, unzip, and analyze Apple Developer code samples from ZIP files',
+          inputSchema: {
+            type: 'object',
+            properties: {
+              zipUrl: {
+                type: 'string',
+                description: 'URL of the Apple Developer code sample ZIP file (e.g., from docs-assets.developer.apple.com)',
+              },
+            },
+            required: ['zipUrl'],
+          },
+        },
       ],
     }));
 
@@ -87,6 +105,8 @@ class AppleDeveloperDocsMCPServer {
             );
           case 'get_apple_doc_content':
             return await this.getAppleDocContent((args as any).url as string);
+          case 'download_apple_code_sample':
+            return await this.downloadAppleCodeSample((args as any).zipUrl as string);
           default:
             throw new Error(`Unknown tool: ${name}`);
         }
@@ -237,6 +257,210 @@ ${code}
     } catch (error) {
       throw new Error(`Failed to get Apple doc content: ${error}`);
     }
+  }
+
+  private async downloadAppleCodeSample(zipUrl: string) {
+    try {
+      // Validate that this is an Apple docs-assets URL
+      if (!zipUrl.includes('docs-assets.developer.apple.com')) {
+        throw new Error('URL must be from docs-assets.developer.apple.com');
+      }
+
+      // Download the ZIP file
+      const response = await fetch(zipUrl, {
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+        },
+      });
+
+      if (!response.ok) {
+        throw new Error(`Failed to download ZIP file: ${response.status}`);
+      }
+
+      const buffer = await response.buffer();
+      
+      // Create a temporary directory for extraction
+      const tempDir = path.join(tmpdir(), `apple-code-sample-${Date.now()}`);
+      await fs.mkdir(tempDir, { recursive: true });
+
+      try {
+        // Unzip the file
+        const zip = new AdmZip(buffer);
+        zip.extractAllTo(tempDir, true);
+
+        // Analyze the extracted contents
+        const analysis = await this.analyzeCodeSample(tempDir);
+        
+        // Clean up the temporary directory
+        await fs.rm(tempDir, { recursive: true, force: true });
+
+        return {
+          content: [
+            {
+              type: 'text',
+              text: `# Apple Code Sample Analysis
+
+**ZIP URL:** ${zipUrl}
+
+## Project Structure:
+${analysis.structure}
+
+## Key Files:
+${analysis.keyFiles.map(file => `### ${file.name}
+**Type:** ${file.type}
+**Size:** ${file.size} bytes
+
+\`\`\`${file.extension}
+${file.content}
+\`\`\`
+`).join('\n')}
+
+## Summary:
+${analysis.summary}`,
+            },
+          ],
+        };
+      } catch (extractError) {
+        // Clean up on error
+        await fs.rm(tempDir, { recursive: true, force: true }).catch(() => {});
+        throw extractError;
+      }
+    } catch (error) {
+      throw new Error(`Failed to download and analyze Apple code sample: ${error}`);
+    }
+  }
+
+  private async analyzeCodeSample(extractPath: string): Promise<{
+    structure: string;
+    keyFiles: Array<{
+      name: string;
+      type: string;
+      size: number;
+      content: string;
+      extension: string;
+    }>;
+    summary: string;
+  }> {
+    const structure = await this.buildDirectoryTree(extractPath);
+    const allFiles = await this.getAllFiles(extractPath);
+    
+    // Filter for key files (source code, project files, etc.)
+    const keyFiles = [];
+    const importantExtensions = ['.swift', '.m', '.h', '.mm', '.cpp', '.c', '.xcodeproj', '.plist', '.json', '.md', '.txt'];
+    
+    for (const filePath of allFiles) {
+      const relativePath = path.relative(extractPath, filePath);
+      const extension = path.extname(filePath).toLowerCase();
+      
+      if (importantExtensions.includes(extension) || relativePath.includes('README')) {
+        try {
+          const stats = await fs.stat(filePath);
+          if (stats.size < 50000) { // Only include files smaller than 50KB
+            const content = await fs.readFile(filePath, 'utf-8');
+            keyFiles.push({
+              name: relativePath,
+              type: this.getFileType(extension),
+              size: stats.size,
+              content: content.substring(0, 2000), // Limit content to 2000 chars
+              extension: extension.slice(1) || 'text',
+            });
+          }
+        } catch (error) {
+          // Skip files that can't be read
+          continue;
+        }
+      }
+    }
+
+    // Sort by importance (Swift files first, then headers, etc.)
+    keyFiles.sort((a, b) => {
+      const importance = { swift: 5, h: 4, m: 3, mm: 2, cpp: 1, c: 1 };
+      const aImportance = importance[a.extension as keyof typeof importance] || 0;
+      const bImportance = importance[b.extension as keyof typeof importance] || 0;
+      return bImportance - aImportance;
+    });
+
+    // Generate summary
+    let summary = 'This Apple code sample contains:\n';
+    const fileTypes = keyFiles.reduce((acc, file) => {
+      acc[file.type] = (acc[file.type] || 0) + 1;
+      return acc;
+    }, {} as Record<string, number>);
+
+    Object.entries(fileTypes).forEach(([type, count]) => {
+      summary += `- ${count} ${type} file(s)\n`;
+    });
+
+    return {
+      structure,
+      keyFiles: keyFiles.slice(0, 5), // Limit to top 5 most important files
+      summary,
+    };
+  }
+
+  private async buildDirectoryTree(dirPath: string, indent = ''): Promise<string> {
+    try {
+      const entries = await fs.readdir(dirPath, { withFileTypes: true });
+      let tree = '';
+      
+      for (const entry of entries) {
+        if (entry.name.startsWith('.')) continue; // Skip hidden files
+        
+        tree += `${indent}${entry.isDirectory() ? '📁' : '📄'} ${entry.name}\n`;
+        
+        if (entry.isDirectory() && indent.length < 8) { // Limit depth to avoid too much nesting
+          const subPath = path.join(dirPath, entry.name);
+          tree += await this.buildDirectoryTree(subPath, indent + '  ');
+        }
+      }
+      
+      return tree;
+    } catch (error) {
+      return `${indent}❌ Error reading directory\n`;
+    }
+  }
+
+  private async getAllFiles(dirPath: string): Promise<string[]> {
+    const files: string[] = [];
+    
+    try {
+      const entries = await fs.readdir(dirPath, { withFileTypes: true });
+      
+      for (const entry of entries) {
+        if (entry.name.startsWith('.')) continue;
+        
+        const fullPath = path.join(dirPath, entry.name);
+        
+        if (entry.isDirectory()) {
+          const subFiles = await this.getAllFiles(fullPath);
+          files.push(...subFiles);
+        } else {
+          files.push(fullPath);
+        }
+      }
+    } catch (error) {
+      // Ignore errors and continue
+    }
+    
+    return files;
+  }
+
+  private getFileType(extension: string): string {
+    const typeMap: Record<string, string> = {
+      '.swift': 'Swift source',
+      '.m': 'Objective-C source',
+      '.h': 'Header',
+      '.mm': 'Objective-C++ source',
+      '.cpp': 'C++ source',
+      '.c': 'C source',
+      '.xcodeproj': 'Xcode project',
+      '.plist': 'Property list',
+      '.json': 'JSON configuration',
+      '.md': 'Markdown documentation',
+      '.txt': 'Text file',
+    };
+    
+    return typeMap[extension.toLowerCase()] || 'Unknown';
   }
 
   private setupErrorHandling() {

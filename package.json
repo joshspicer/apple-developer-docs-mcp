@@ -22,14 +22,16 @@
   "author": "Josh Spicer",
   "license": "MIT",
   "devDependencies": {
-    "@types/node": "^20.0.0",
     "@types/cheerio": "^0.22.0",
+    "@types/node": "^20.0.0",
     "typescript": "^5.0.0"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^0.4.0",
-    "node-fetch": "^3.3.0",
-    "cheerio": "^1.0.0-rc.12"
+    "@types/adm-zip": "^0.5.7",
+    "adm-zip": "^0.5.16",
+    "cheerio": "^1.0.0-rc.12",
+    "node-fetch": "^3.3.0"
   },
   "bin": {
     "apple-developer-docs-mcp": "dist/index.js"
