@@ -6,6 +6,8 @@ import {
   CallToolRequestSchema,
   ListToolsRequestSchema,
 } from '@modelcontextprotocol/sdk/types.js';
+import fetch from 'node-fetch';
+import * as cheerio from 'cheerio';
 
 interface AppleDocSearchResult {
   title: string;
@@ -104,26 +106,55 @@ class AppleDeveloperDocsMCPServer {
 
   private async searchAppleDocs(query: string, type: string = 'all') {
     try {
-      // For now, we'll implement a basic search using Apple's developer site
-      // In a real implementation, you might want to use Apple's search API or scrape results
-      const searchUrl = `https://developer.apple.com/search/?q=${encodeURIComponent(query)}&type=${type}`;
+      // Use Apple's developer search endpoint
+      const searchUrl = `https://developer.apple.com/search/search_data.php?q=${encodeURIComponent(query)}&platform=all&content_type=${type === 'all' ? '' : type}`;
       
-      // Simulate search results for demonstration
-      // In a real implementation, you would make HTTP requests to fetch actual results
-      const mockResults: AppleDocSearchResult[] = [
-        {
-          title: `Search results for "${query}"`,
-          url: searchUrl,
-          description: `Found documentation related to ${query} on Apple Developer site`,
-          type: 'search',
+      const response = await fetch(searchUrl, {
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
         },
-      ];
+      });
+      
+      if (!response.ok) {
+        throw new Error(`Search request failed: ${response.status}`);
+      }
+      
+      const data = await response.json() as any;
+      const results: AppleDocSearchResult[] = [];
+      
+      if (data.results && data.results.length > 0) {
+        for (const item of data.results.slice(0, 10)) { // Limit to top 10 results
+          results.push({
+            title: item.title || 'Untitled',
+            url: item.url ? `https://developer.apple.com${item.url}` : '',
+            description: item.description || item.summary || 'No description available',
+            type: item.content_type || 'unknown',
+          });
+        }
+      }
+      
+      if (results.length === 0) {
+        // Fallback to basic search URL if API doesn't return results
+        const fallbackUrl = `https://developer.apple.com/search/?q=${encodeURIComponent(query)}`;
+        results.push({
+          title: `Search Apple Developer Documentation for "${query}"`,
+          url: fallbackUrl,
+          description: `No specific results found. Visit this URL to search manually.`,
+          type: 'search',
+        });
+      }
 
       return {
         content: [
           {
             type: 'text',
-            text: JSON.stringify(mockResults, null, 2),
+            text: `Found ${results.length} result(s) for "${query}":\n\n` +
+                  results.map((result, index) => 
+                    `${index + 1}. **${result.title}**\n` +
+                    `   URL: ${result.url}\n` +
+                    `   Type: ${result.type}\n` +
+                    `   Description: ${result.description}\n`
+                  ).join('\n'),
           },
         ],
       };
@@ -139,21 +170,67 @@ class AppleDeveloperDocsMCPServer {
         throw new Error('URL must be from developer.apple.com');
       }
 
-      // For now, return the URL for the user to visit
-      // In a real implementation, you would fetch and parse the content
+      const response = await fetch(url, {
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+        },
+      });
+
+      if (!response.ok) {
+        throw new Error(`Failed to fetch content: ${response.status}`);
+      }
+
+      const html = await response.text();
+      const $ = cheerio.load(html);
+
+      // Extract title
+      const title = $('h1').first().text().trim() || $('title').text().trim();
+
+      // Extract main content
+      let content = '';
+      
+      // Try to find the main content area
+      const mainContent = $('.content, .main-content, article, .documentation-content').first();
+      if (mainContent.length > 0) {
+        // Remove script and style elements
+        mainContent.find('script, style, nav, .navigation').remove();
+        
+        // Extract text content
+        content = mainContent.text().trim();
+      } else {
+        // Fallback: extract from body
+        $('script, style, nav, header, footer').remove();
+        content = $('body').text().trim();
+      }
+
+      // Clean up the content (remove excessive whitespace)
+      content = content.replace(/\s+/g, ' ').substring(0, 4000); // Limit to 4000 chars
+
+      // Extract any code examples
+      const codeBlocks: string[] = [];
+      $('pre code, .code-example, .highlight').each((_, elem) => {
+        const code = $(elem).text().trim();
+        if (code.length > 10) { // Only include substantial code blocks
+          codeBlocks.push(code);
+        }
+      });
+
       return {
         content: [
           {
             type: 'text',
-            text: `Apple Developer Documentation: ${url}
+            text: `# ${title}
 
-This tool would normally fetch the content from this URL. For now, please visit the URL directly to access the documentation.
+**URL:** ${url}
 
-To implement full content fetching, this server would need to:
-1. Make HTTP requests to the Apple Developer site
-2. Parse the HTML content
-3. Extract relevant documentation text
-4. Return structured information`,
+## Content:
+${content}
+
+${codeBlocks.length > 0 ? `## Code Examples:
+${codeBlocks.map((code, index) => `### Example ${index + 1}:
+\`\`\`
+${code}
+\`\`\``).join('\n\n')}` : ''}`,
           },
         ],
       };
