@@ -1,0 +1,38 @@
+{
+  "name": "apple-developer-docs-mcp",
+  "version": "1.0.0",
+  "description": "An MCP server that fetches the right data from Apple's developer documentation site",
+  "main": "dist/index.js",
+  "type": "module",
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "start": "node dist/index.js",
+    "prepublishOnly": "npm run build"
+  },
+  "keywords": [
+    "mcp",
+    "apple",
+    "developer",
+    "documentation",
+    "ai",
+    "assistant"
+  ],
+  "author": "Josh Spicer",
+  "license": "MIT",
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "typescript": "^5.0.0"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^0.4.0"
+  },
+  "bin": {
+    "apple-developer-docs-mcp": "dist/index.js"
+  },
+  "files": [
+    "dist/**/*",
+    "README.md",
+    "LICENSE"
+  ]
+}
