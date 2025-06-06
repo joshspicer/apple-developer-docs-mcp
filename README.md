@@ -31,8 +31,9 @@ npm run build
 ### With VS Code (Claude Extension)
 
 1. Install the Claude extension in VS Code
-2. Add the MCP server to your configuration:
+2. Add the MCP server to your Claude Desktop configuration:
 
+**For global installation:**
 ```json
 {
   "mcpServers": {
@@ -42,6 +43,20 @@ npm run build
   }
 }
 ```
+
+**For local/npx usage:**
+```json
+{
+  "mcpServers": {
+    "apple-developer-docs": {
+      "command": "npx",
+      "args": ["apple-developer-docs-mcp"]
+    }
+  }
+}
+```
+
+See `claude_desktop_config.json` for a complete example configuration.
 
 ### Command Line
 
