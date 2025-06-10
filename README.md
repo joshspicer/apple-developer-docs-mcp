@@ -21,8 +21,7 @@ I despise reading docs on https://developer.apple.com.  This MCP server will do 
 }
 ```
 
-
-## Example Workflow
+## Implementation Details
 
 Here's a typical workflow using these tools together:
 
@@ -49,24 +48,6 @@ Here's a typical workflow using these tools together:
    ```
 
 4. The sample is now available in your home directory at `~/AppleSampleCode/DisplayingOverlaysOnAMap`
-
-### Helper Utilities
-
-The repository includes two helpful utilities to demonstrate and automate ZIP URL extraction:
-
-1. **Examples Script**: See a full demonstration of the URL extraction process:
-   ```
-   node examples/extract-zip-url-demo.js
-   ```
-
-2. **Extraction Utility**: Extract ZIP URLs directly from JSON responses:
-   ```
-   # From a JSON string
-   node utils/extract-zip-url.js '{"sampleCodeDownload":{"action":{"identifier":"f14a9bc447c5/DisplayingOverlaysOnAMap.zip"}}}'
-   
-   # From a saved JSON file
-   node utils/extract-zip-url.js path/to/saved-response.json
-   ```
 
 ## Extracting ZIP URLs from Previous Tool Calls
 
