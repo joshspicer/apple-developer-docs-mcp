@@ -1,8 +1,0 @@
-{
-  "mcpServers": {
-    "apple-developer-docs": {
-      "command": "npx",
-      "args": ["apple-developer-docs-mcp"]
-    }
-  }
-}

@@ -27,10 +27,10 @@
     "typescript": "^5.0.0"
   },
   "dependencies": {
-    "@modelcontextprotocol/sdk": "^0.4.0",
+    "@modelcontextprotocol/sdk": "^1.12.1",
     "@types/adm-zip": "^0.5.7",
     "adm-zip": "^0.5.16",
-    "cheerio": "^1.0.0-rc.12",
+    "cheerio": "^1.1.0",
     "node-fetch": "^3.3.0"
   },
   "bin": {
