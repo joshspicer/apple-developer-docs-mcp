@@ -20,14 +20,14 @@ interface AppleDocWithSampleJSON {
 }
 
 /**
- * Extract the sample code download URL from an Apple Documentation JSON
+ * Extract the sample code download URL from an Apple Documentation page
  * 
- * @param jsonUrl URL of the Apple Documentation JSON
- * @returns The sample code download URL
+ * @param jsonUrl URL of the Apple Developer Documentation page
+ * @returns The sample code download URL in the format: https://docs-assets.developer.apple.com/published/[identifier]/[filename].zip
  */
 export async function getSampleCodeDownloadUrl(jsonUrl: string): Promise<string> {
   try {
-    console.error(`Fetching download URL from doc JSON: ${jsonUrl}`);
+    console.error(`Fetching download URL from documentation page: ${jsonUrl}`);
     
     let jsonData: AppleDocWithSampleJSON;
     
@@ -35,15 +35,25 @@ export async function getSampleCodeDownloadUrl(jsonUrl: string): Promise<string>
     if (jsonUrl.startsWith('file://')) {
       const filePath = new URL(jsonUrl).pathname;
       const fileContent = await fs.readFile(filePath, 'utf-8');
-      jsonData = JSON.parse(fileContent);
+      try {
+        jsonData = JSON.parse(fileContent);
+      } catch (error) {
+        throw new Error(`Failed to parse JSON from file. The file may not be valid JSON: ${error instanceof Error ? error.message : String(error)}`);
+      }
     } else {
       // Validate that this is an Apple Developer URL for web URLs
       if (!jsonUrl.includes('developer.apple.com')) {
-        throw new Error('URL must be from developer.apple.com');
+        throw new Error(`URL must be from developer.apple.com (e.g., https://developer.apple.com/documentation/...)`);
       }
       
+      // If the URL is not a JSON URL, convert it to the JSON API URL
+      const jsonApiUrl = jsonUrl.endsWith('.json') ? jsonUrl : 
+        jsonUrl.replace('/documentation/', '/tutorials/data/documentation/') + '.json';
+      
+      console.error(`Fetching documentation JSON from: ${jsonApiUrl}`);
+      
       // Fetch the documentation JSON
-      const response = await fetch(jsonUrl, {
+      const response = await fetch(jsonApiUrl, {
         headers: {
           'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
           'Accept': 'application/json',
@@ -51,16 +61,22 @@ export async function getSampleCodeDownloadUrl(jsonUrl: string): Promise<string>
       });
       
       if (!response.ok) {
-        throw new Error(`Failed to fetch JSON content: ${response.status}`);
+        throw new Error(`Failed to fetch JSON content: HTTP ${response.status} - ${response.statusText}`);
       }
 
-      // Parse the JSON response
-      jsonData = await response.json() as AppleDocWithSampleJSON;
+      try {
+        // Parse the JSON response
+        jsonData = await response.json() as AppleDocWithSampleJSON;
+      } catch (error) {
+        throw new Error(`Failed to parse JSON response: ${error instanceof Error ? error.message : String(error)}`);
+      }
     }
     
     // Extract the sample code download identifier
     if (!jsonData.sampleCodeDownload?.action?.identifier) {
-      throw new Error('No sample code download URL found in the documentation JSON');
+      throw new Error(`No sample code download URL found in the documentation.
+This documentation page might not have a downloadable sample code.
+Try searching for a different example that includes sample code.`);
     }
     
     const downloadIdentifier = jsonData.sampleCodeDownload.action.identifier;
@@ -82,26 +98,58 @@ export async function getSampleCodeDownloadUrl(jsonUrl: string): Promise<string>
  * Downloads, unzips, and analyzes an Apple Developer code sample from a ZIP file
  * Extracts the sample to the user's home directory
  * 
- * @param zipUrl URL of the Apple Developer code sample ZIP file or documentation JSON URL
+ * @param zipUrl URL of the Apple Developer code sample ZIP file or documentation page URL
  * @returns Formatted information about the code sample or error response
  */
 export async function downloadAndAnalyzeCodeSample(url: string) {
   try {
     let downloadUrl = url;
     
-    // Check if this is a documentation JSON URL or a direct ZIP URL
+    // Check if this is a documentation URL or a direct ZIP URL
     if (url.includes('developer.apple.com') && !url.includes('docs-assets.developer.apple.com')) {
       // This is a documentation URL, extract the download URL from it
       try {
+        console.error(`Attempting to extract download URL from documentation: ${url}`);
         downloadUrl = await getSampleCodeDownloadUrl(url);
+        console.error(`Successfully extracted download URL: ${downloadUrl}`);
       } catch (error) {
-        throw new Error(`Failed to get download URL from documentation: ${error instanceof Error ? error.message : String(error)}`);
+        throw new Error(`Failed to extract download URL from documentation: ${error instanceof Error ? error.message : String(error)}
+
+To use this tool with a ZIP URL from previous tool results:
+1. In the JSON output from get_apple_doc_content, look for the sampleCodeDownload section:
+   "sampleCodeDownload": {
+     "action": {
+       "identifier": "f14a9bc447c5/DisplayingOverlaysOnAMap.zip"
+     }
+   }
+
+2. Extract the "identifier" value (e.g., "f14a9bc447c5/DisplayingOverlaysOnAMap.zip")
+
+3. Create the complete ZIP URL by prepending "https://docs-assets.developer.apple.com/published/":
+   https://docs-assets.developer.apple.com/published/f14a9bc447c5/DisplayingOverlaysOnAMap.zip
+
+4. Use this complete URL as the zipUrl parameter
+   mcp_apple-develop_download_apple_code_sample zipUrl="https://docs-assets.developer.apple.com/published/f14a9bc447c5/DisplayingOverlaysOnAMap.zip"
+
+Alternatively, you can just use a documentation URL directly:
+mcp_apple-develop_download_apple_code_sample zipUrl="https://developer.apple.com/documentation/mapkit/displaying-overlays-on-a-map"`);
       }
     }
     
     // Validate that this is an Apple docs-assets URL
     if (!downloadUrl.includes('docs-assets.developer.apple.com')) {
-      throw new Error('URL must be from docs-assets.developer.apple.com');
+      throw new Error(`Invalid URL format: ${downloadUrl}
+
+The zipUrl parameter must be either:
+1. A documentation page URL from developer.apple.com, or
+2. A direct ZIP download URL from docs-assets.developer.apple.com
+
+How to create a correct direct ZIP URL from get_apple_doc_content results:
+1. Find the "sampleCodeDownload.action.identifier" value in the JSON output
+2. Prepend "https://docs-assets.developer.apple.com/published/" to that identifier
+3. Example:
+   If identifier is "f14a9bc447c5/DisplayingOverlaysOnAMap.zip"
+   Then the correct URL is "https://docs-assets.developer.apple.com/published/f14a9bc447c5/DisplayingOverlaysOnAMap.zip"`);
     }
 
     console.error(`Downloading code sample from: ${downloadUrl}`);
