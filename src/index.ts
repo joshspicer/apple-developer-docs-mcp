@@ -65,12 +65,86 @@ class AppleDeveloperDocsMCPServer {
       // Create a search URL for Apple Developer Documentation
       const searchUrl = `https://developer.apple.com/search/?q=${encodeURIComponent(query)}`;
       
-      // Return a placeholder message - waiting for HTML sample
+      console.error(`Searching Apple docs for: ${query}`);
+      
+      // Fetch the search results page
+      const response = await fetch(searchUrl);
+      if (!response.ok) {
+        throw new Error(`Failed to fetch search results: ${response.statusText}`);
+      }
+      
+      const html = await response.text();
+      
+      // Parse the HTML to extract search results
+      const $ = cheerio.load(html);
+      const results: AppleDocSearchResult[] = [];
+      
+      // Find all search result items
+      $('.search-results .search-result').each((i, element) => {
+        const resultItem = $(element);
+        
+        // Extract type (documentation, video, etc.)
+        const resultType = resultItem.hasClass('documentation') ? 'documentation' : 
+                           resultItem.hasClass('video') ? 'video' : 
+                           resultItem.hasClass('sample') ? 'sample' : 
+                           resultItem.hasClass('general') ? 'general' : 'other';
+        
+        // If type filter is specified, apply it
+        if (type !== 'all') {
+          if ((type === 'api' && resultType !== 'documentation') ||
+              (type === 'guide' && resultType !== 'documentation') ||
+              (type === 'sample' && resultType !== 'sample') ||
+              (type === 'video' && resultType !== 'video')) {
+            return; // Skip this result
+          }
+        }
+        
+        // Extract title
+        const titleElement = resultItem.find('.result-title');
+        const title = titleElement.text().trim();
+        
+        // Extract URL
+        const urlElement = titleElement.find('a');
+        let url = urlElement.attr('href') || '';
+        if (url && url.startsWith('/')) {
+          url = `https://developer.apple.com${url}`;
+        }
+        
+        // Extract description
+        const description = resultItem.find('.result-description').text().trim();
+        
+        if (title && url) {
+          results.push({
+            title,
+            url,
+            description,
+            type: resultType
+          });
+        }
+      });
+      
+      // If no results were found
+      if (results.length === 0) {
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: `No results found for "${query}". You can view the search page directly at: ${searchUrl}`,
+            }
+          ],
+        };
+      }
+      
+      // Format results for display
+      const formattedResults = results.map(result => {
+        return `## [${result.title}](${result.url})\n${result.description}\n*Type: ${result.type}*\n`;
+      }).join('\n');
+      
       return {
         content: [
           {
             type: "text" as const,
-            text: `Placeholder for search_apple_docs tool. Waiting for HTML sample to implement parsing.\n\nSearch URL: ${searchUrl}`,
+            text: `# Search Results for "${query}"\n\n${formattedResults}\n\nView all results: ${searchUrl}`,
           }
         ],
       };
@@ -80,7 +154,7 @@ class AppleDeveloperDocsMCPServer {
         content: [
           {
             type: "text" as const,
-            text: `Error: ${errorMessage}`,
+            text: `Error: Failed to search Apple docs: ${errorMessage}`,
           }
         ],
         isError: true
