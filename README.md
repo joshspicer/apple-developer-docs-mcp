@@ -3,13 +3,7 @@
 I despise reading docs on https://developer.apple.com.  This MCP server will do that for you.
 
 
-<div align="center">
-   <video width="640" controls>
-      <source src="demos/download-sample-code.mov" type="video/quicktime">
-      Your browser does not support the video tag. 
-      <a href="demos/download-sample-code.mov">Download the video</a> instead.
-   </video>
-</div>
+![Download Sample Code Demo](demos/download-sample-code.gif)
 
 ## Usage
 
