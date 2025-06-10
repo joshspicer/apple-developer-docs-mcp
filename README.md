@@ -49,9 +49,8 @@ Here's a typical workflow using these tools together:
 
 4. The sample is now available in your home directory at `~/AppleSampleCode/DisplayingOverlaysOnAMap`
 
-## Extracting ZIP URLs from Previous Tool Calls
+### Extracting ZIP URLs from Previous Tool Calls
 
-### Step-by-Step Guide
 
 When using the `mcp_apple-develop_get_apple_doc_content` tool, it returns a JSON structure that contains the information needed to download sample code. Here's exactly how to extract and use a ZIP URL:
 
@@ -81,7 +80,7 @@ When using the `mcp_apple-develop_get_apple_doc_content` tool, it returns a JSON
    mcp_apple-develop_download_apple_code_sample zipUrl="https://docs-assets.developer.apple.com/published/f14a9bc447c5/DisplayingOverlaysOnAMap.zip"
    ```
 
-### Example of Full Workflow with Extraction
+#### Example of Full Workflow with Extraction
 
 ```
 # Step 1: Search for docs
@@ -104,7 +103,7 @@ mcp_apple-develop_get_apple_doc_content url="https://developer.apple.com/documen
 mcp_apple-develop_download_apple_code_sample zipUrl="https://docs-assets.developer.apple.com/published/9f5a647e1f57/ConfiguringRelationships.zip"
 ```
 
-### Shortcut: Using the Documentation URL Directly
+#### Shortcut: Using the Documentation URL Directly
 
 If you don't want to extract the ZIP URL, you can simply use the documentation URL directly:
 
@@ -114,28 +113,28 @@ mcp_apple-develop_download_apple_code_sample zipUrl="https://developer.apple.com
 
 The tool will automatically extract the download URL for you.
 
-## Available Tools
+### Available Tools
 
-### search_apple_docs
+#### search_apple_docs
 Search Apple Developer Documentation for APIs, frameworks, guides, samples, and videos.
 
 Parameters:
 - `query`: Search query for Apple Developer Documentation
 - `type`: Type of documentation to search for (optional, default is 'all'). Possible values: 'all', 'api', 'guide', 'sample', 'video'
 
-### get_apple_doc_content
+#### get_apple_doc_content
 Get detailed content from a specific Apple Developer Documentation page by recursively fetching and parsing its JSON API data.
 
 Parameters:
 - `url`: URL of the Apple Developer Documentation page
 
-### download_apple_code_sample
+#### download_apple_code_sample
 Download, unzip, and analyze Apple Developer code samples from ZIP files. Sample code is extracted to the user's home directory.
 
 Parameters:
 - `zipUrl`: URL of the Apple Developer documentation page or direct ZIP download URL (docs-assets.developer.apple.com format)
 
-#### How to Get the ZIP URL:
+##### How to Get the ZIP URL:
 There are three ways to get the correct ZIP URL for this tool:
 
 1. **From documentation pages:** Simply use the documentation URL directly, and the tool will automatically extract the download URL:
@@ -162,7 +161,7 @@ There are three ways to get the correct ZIP URL for this tool:
 
 3. **From documentation JSON directly:** If you examine the JSON structure of a documentation page (by adding .json to the URL), you can find the `sampleCodeDownload.action.identifier` value and construct the URL as shown above.
 
-#### Notes:
+##### Notes:
 - The tool automatically extracts the correct download URL from documentation pages
 - Sample code is extracted to `~/AppleSampleCode/[sample-name]`
 - The tool provides a summary of the sample contents, including key files and code snippets
