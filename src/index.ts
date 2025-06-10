@@ -4,12 +4,12 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { z } from 'zod';
 import fetch from 'node-fetch';
-import * as cheerio from 'cheerio';
-import AdmZip from 'adm-zip';
-import { promises as fs } from 'fs';
-import path from 'path';
-import { tmpdir } from 'os';
+import { formatJsonDocumentation, formatHtmlDocumentation } from './doc-parsers.js';
+import { parseSearchResults, filterResultsByType } from './search-parser.js';
+import { downloadAndAnalyzeCodeSample } from './download-helper.js';
+import { fetchAppleDocJson } from './doc-fetcher.js';
 
+// Local interface for search results
 interface AppleDocSearchResult {
   title: string;
   url: string;
@@ -46,7 +46,7 @@ class AppleDeveloperDocsMCPServer {
     // Define get_apple_doc_content tool
     this.server.tool(
       'get_apple_doc_content',
-      'Get detailed content from a specific Apple Developer Documentation page',
+      'Get detailed content from a specific Apple Developer Documentation page by recursively fetching and parsing its JSON API data',
       { url: z.string().describe('URL of the Apple Developer Documentation page') },
       async (args) => this.getAppleDocContent(args.url)
     );
@@ -68,86 +68,20 @@ class AppleDeveloperDocsMCPServer {
       console.error(`Searching Apple docs for: ${query}`);
       
       // Fetch the search results page
-      const response = await fetch(searchUrl);
+      const response = await fetch(searchUrl, {
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+        },
+      });
+      
       if (!response.ok) {
-        throw new Error(`Failed to fetch search results: ${response.statusText}`);
+        throw new Error(`Failed to fetch search results: ${response.status}`);
       }
       
       const html = await response.text();
       
-      // Parse the HTML to extract search results
-      const $ = cheerio.load(html);
-      const results: AppleDocSearchResult[] = [];
-      
-      // Find all search result items
-      $('.search-results .search-result').each((i, element) => {
-        const resultItem = $(element);
-        
-        // Extract type (documentation, video, etc.)
-        const resultType = resultItem.hasClass('documentation') ? 'documentation' : 
-                           resultItem.hasClass('video') ? 'video' : 
-                           resultItem.hasClass('sample') ? 'sample' : 
-                           resultItem.hasClass('general') ? 'general' : 'other';
-        
-        // If type filter is specified, apply it
-        if (type !== 'all') {
-          if ((type === 'api' && resultType !== 'documentation') ||
-              (type === 'guide' && resultType !== 'documentation') ||
-              (type === 'sample' && resultType !== 'sample') ||
-              (type === 'video' && resultType !== 'video')) {
-            return; // Skip this result
-          }
-        }
-        
-        // Extract title
-        const titleElement = resultItem.find('.result-title');
-        const title = titleElement.text().trim();
-        
-        // Extract URL
-        const urlElement = titleElement.find('a');
-        let url = urlElement.attr('href') || '';
-        if (url && url.startsWith('/')) {
-          url = `https://developer.apple.com${url}`;
-        }
-        
-        // Extract description
-        const description = resultItem.find('.result-description').text().trim();
-        
-        if (title && url) {
-          results.push({
-            title,
-            url,
-            description,
-            type: resultType
-          });
-        }
-      });
-      
-      // If no results were found
-      if (results.length === 0) {
-        return {
-          content: [
-            {
-              type: "text" as const,
-              text: `No results found for "${query}". You can view the search page directly at: ${searchUrl}`,
-            }
-          ],
-        };
-      }
-      
-      // Format results for display
-      const formattedResults = results.map(result => {
-        return `## [${result.title}](${result.url})\n${result.description}\n*Type: ${result.type}*\n`;
-      }).join('\n');
-      
-      return {
-        content: [
-          {
-            type: "text" as const,
-            text: `# Search Results for "${query}"\n\n${formattedResults}\n\nView all results: ${searchUrl}`,
-          }
-        ],
-      };
+      // Parse and return the search results
+      return parseSearchResults(html, query, searchUrl);
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error);
       return {
@@ -163,63 +97,12 @@ class AppleDeveloperDocsMCPServer {
   }
 
   private async getAppleDocContent(url: string) {
-    try {
-      // Validate that this is an Apple Developer URL
-      if (!url.includes('developer.apple.com')) {
-        throw new Error('URL must be from developer.apple.com');
-      }
-
-      // Return a placeholder message - waiting for HTML sample
-      return {
-        content: [
-          {
-            type: "text" as const,
-            text: `Placeholder for get_apple_doc_content tool. Waiting for HTML sample to implement parsing.\n\nURL: ${url}`,
-          }
-        ],
-      };
-    } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : String(error);
-      return {
-        content: [
-          {
-            type: "text" as const,
-            text: `Error: ${errorMessage}`,
-          }
-        ],
-        isError: true
-      };
-    }
+    // Use the JSON fetching approach to get documentation content
+    return fetchAppleDocJson(url);
   }
 
   private async downloadAppleCodeSample(zipUrl: string) {
-    try {
-      // Validate that this is an Apple docs-assets URL
-      if (!zipUrl.includes('docs-assets.developer.apple.com')) {
-        throw new Error('URL must be from docs-assets.developer.apple.com');
-      }
-
-      // Return a placeholder message - waiting for ZIP sample
-      return {
-        content: [
-          {
-            type: "text" as const,
-            text: `Placeholder for download_apple_code_sample tool. Waiting for ZIP sample to implement parsing.\n\nZIP URL: ${zipUrl}`,
-          }
-        ],
-      };
-    } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : String(error);
-      return {
-        content: [
-          {
-            type: "text" as const,
-            text: `Error: ${errorMessage}`,
-          }
-        ],
-        isError: true
-      };
-    }
+    return downloadAndAnalyzeCodeSample(zipUrl);
   }
 
   private setupErrorHandling() {

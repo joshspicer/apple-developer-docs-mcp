@@ -39,7 +39,6 @@
   "files": [
     "dist/**/*",
     "README.md",
-    "LICENSE",
-    "claude_desktop_config.json"
+    "LICENSE"
   ]
 }
