@@ -28,9 +28,9 @@ interface AppleDocWithSampleJSON {
 export async function getSampleCodeDownloadUrl(jsonUrl: string): Promise<string> {
   try {
     console.error(`Fetching download URL from documentation page: ${jsonUrl}`);
-    
+
     let jsonData: AppleDocWithSampleJSON;
-    
+
     // Handle file:// URLs for testing with local files
     if (jsonUrl.startsWith('file://')) {
       const filePath = new URL(jsonUrl).pathname;
@@ -45,13 +45,13 @@ export async function getSampleCodeDownloadUrl(jsonUrl: string): Promise<string>
       if (!jsonUrl.includes('developer.apple.com')) {
         throw new Error(`URL must be from developer.apple.com (e.g., https://developer.apple.com/documentation/...)`);
       }
-      
+
       // If the URL is not a JSON URL, convert it to the JSON API URL
-      const jsonApiUrl = jsonUrl.endsWith('.json') ? jsonUrl : 
+      const jsonApiUrl = jsonUrl.endsWith('.json') ? jsonUrl :
         jsonUrl.replace('/documentation/', '/tutorials/data/documentation/') + '.json';
-      
+
       console.error(`Fetching documentation JSON from: ${jsonApiUrl}`);
-      
+
       // Fetch the documentation JSON
       const response = await fetch(jsonApiUrl, {
         headers: {
@@ -59,7 +59,7 @@ export async function getSampleCodeDownloadUrl(jsonUrl: string): Promise<string>
           'Accept': 'application/json',
         },
       });
-      
+
       if (!response.ok) {
         throw new Error(`Failed to fetch JSON content: HTTP ${response.status} - ${response.statusText}`);
       }
@@ -71,22 +71,22 @@ export async function getSampleCodeDownloadUrl(jsonUrl: string): Promise<string>
         throw new Error(`Failed to parse JSON response: ${error instanceof Error ? error.message : String(error)}`);
       }
     }
-    
+
     // Extract the sample code download identifier
     if (!jsonData.sampleCodeDownload?.action?.identifier) {
       throw new Error(`No sample code download URL found in the documentation.
 This documentation page might not have a downloadable sample code.
 Try searching for a different example that includes sample code.`);
     }
-    
+
     const downloadIdentifier = jsonData.sampleCodeDownload.action.identifier;
-    
+
     // The identifier is already in the format "f14a9bc447c5/DisplayingOverlaysOnAMap.zip"
     // Construct the download URL
     const downloadUrl = `https://docs-assets.developer.apple.com/published/${downloadIdentifier}`;
-    
+
     console.error(`Found sample code download URL: ${downloadUrl}`);
-    
+
     return downloadUrl;
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
@@ -104,7 +104,7 @@ Try searching for a different example that includes sample code.`);
 export async function downloadAndAnalyzeCodeSample(url: string) {
   try {
     let downloadUrl = url;
-    
+
     // Check if this is a documentation URL or a direct ZIP URL
     if (url.includes('developer.apple.com') && !url.includes('docs-assets.developer.apple.com')) {
       // This is a documentation URL, extract the download URL from it
@@ -135,7 +135,7 @@ Alternatively, you can just use a documentation URL directly:
 mcp_apple-develop_download_apple_code_sample zipUrl="https://developer.apple.com/documentation/mapkit/displaying-overlays-on-a-map"`);
       }
     }
-    
+
     // Validate that this is an Apple docs-assets URL
     if (!downloadUrl.includes('docs-assets.developer.apple.com')) {
       throw new Error(`Invalid URL format: ${downloadUrl}
@@ -153,7 +153,7 @@ How to create a correct direct ZIP URL from get_apple_doc_content results:
     }
 
     console.error(`Downloading code sample from: ${downloadUrl}`);
-    
+
     // Create a samples directory in the user's home directory
     const samplesDir = path.join(homedir(), 'AppleSampleCode');
     try {
@@ -161,13 +161,13 @@ How to create a correct direct ZIP URL from get_apple_doc_content results:
     } catch (error) {
       console.error(`Error creating samples directory: ${error}`);
     }
-    
+
     // Extract the sample name from the ZIP URL
     const urlParts = downloadUrl.split('/');
     const filenameWithExt = urlParts[urlParts.length - 1];
     const sampleName = filenameWithExt.replace('.zip', '');
     const extractionDir = path.join(samplesDir, sampleName);
-    
+
     // Check if the sample already exists
     try {
       const stat = await fs.stat(extractionDir);
@@ -177,58 +177,58 @@ How to create a correct direct ZIP URL from get_apple_doc_content results:
     } catch (error) {
       // Directory doesn't exist, which is what we want
     }
-    
+
     // Download the ZIP file
     const response = await fetch(downloadUrl, {
       headers: {
         'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
       },
     });
-    
+
     if (!response.ok) {
       throw new Error(`Failed to download ZIP file: ${response.status}`);
     }
-    
+
     const zipBuffer = await response.buffer();
-    
+
     // Extract the ZIP file to the user's home directory
     const zip = new AdmZip(zipBuffer);
     zip.extractAllTo(extractionDir, true);
-    
+
     console.error(`Extracted sample to: ${extractionDir}`);
-    
+
     // Analyze the extracted contents
     const files = await getAllFiles(extractionDir);
-    
+
     // Count files by extension
     const fileExtCounts = countFileExtensions(files);
-    
+
     // Get the README content if available
     const readmeContent = await getReadmeContent(extractionDir);
-    
+
     // Get some representative code samples
     const codeSamples = await getRepresentativeCodeSamples(extractionDir, files);
-    
+
     // Build the content
     let markdownContent = `# Code Sample: ${sampleName}\n\n`;
     markdownContent += `**Source:** [${downloadUrl}](${downloadUrl})\n\n`;
     markdownContent += `**Original URL:** ${url !== downloadUrl ? url : 'Same as download URL'}\n\n`;
     markdownContent += `**Extracted to:** ${extractionDir}\n\n`;
-    
+
     if (readmeContent) {
       markdownContent += `## README\n\n${readmeContent}\n\n`;
     }
-    
+
     markdownContent += `## Contents\n\n`;
     markdownContent += `The sample contains ${files.length} files:\n\n`;
-    
+
     // Add file extension breakdown
     markdownContent += `### File Types\n\n`;
     for (const [ext, count] of Object.entries(fileExtCounts)) {
       markdownContent += `- ${ext}: ${count} files\n`;
     }
     markdownContent += '\n';
-    
+
     // Add representative code samples
     if (codeSamples.length > 0) {
       markdownContent += `## Representative Code Samples\n\n`;
@@ -239,7 +239,7 @@ How to create a correct direct ZIP URL from get_apple_doc_content results:
         markdownContent += `\`\`\`${language}\n${sample.content}\n\`\`\`\n\n`;
       });
     }
-    
+
     // Find and suggest opening interesting files
     const interestingFiles = findInterestingFiles(files);
     if (interestingFiles.length > 0) {
@@ -250,14 +250,14 @@ How to create a correct direct ZIP URL from get_apple_doc_content results:
       });
       markdownContent += '\n';
     }
-    
+
     // Add instructions for opening the project
     markdownContent += `## Opening the Project\n\n`;
     markdownContent += `You can open this project in Xcode by:\n\n`;
     markdownContent += `1. Looking for a .xcodeproj or .xcworkspace file in the extracted directory\n`;
     markdownContent += `2. Double-clicking the project file or opening it from Xcode's "Open..." menu\n\n`;
     markdownContent += `The sample code has been downloaded and extracted to: \`${extractionDir}\`\n`;
-    
+
     return {
       content: [
         {
@@ -285,12 +285,12 @@ How to create a correct direct ZIP URL from get_apple_doc_content results:
  */
 async function getAllFiles(dirPath: string): Promise<string[]> {
   const entries = await fs.readdir(dirPath, { withFileTypes: true });
-  
+
   const files = await Promise.all(entries.map(async (entry) => {
     const fullPath = path.join(dirPath, entry.name);
     return entry.isDirectory() ? getAllFiles(fullPath) : [fullPath];
   }));
-  
+
   return files.flat();
 }
 
@@ -299,12 +299,12 @@ async function getAllFiles(dirPath: string): Promise<string[]> {
  */
 function countFileExtensions(files: string[]): Record<string, number> {
   const counts: Record<string, number> = {};
-  
+
   files.forEach(file => {
     const ext = path.extname(file) || '(no extension)';
     counts[ext] = (counts[ext] || 0) + 1;
   });
-  
+
   return counts;
 }
 
@@ -314,16 +314,16 @@ function countFileExtensions(files: string[]): Record<string, number> {
 async function getReadmeContent(dirPath: string): Promise<string | null> {
   try {
     const entries = await fs.readdir(dirPath);
-    
+
     // Look for README files with various extensions
     const readmeRegex = /^readme(\.(md|txt))?$/i;
     const readmeFile = entries.find(entry => readmeRegex.test(entry));
-    
+
     if (readmeFile) {
       const content = await fs.readFile(path.join(dirPath, readmeFile), 'utf-8');
       return content.substring(0, 2000); // Limit size to prevent too much content
     }
-    
+
     return null;
   } catch (error) {
     console.error('Error reading README:', error);
@@ -334,23 +334,23 @@ async function getReadmeContent(dirPath: string): Promise<string | null> {
 /**
  * Get some representative code samples
  */
-async function getRepresentativeCodeSamples(dirPath: string, files: string[]): Promise<Array<{filePath: string, content: string}>> {
-  const samples: Array<{filePath: string, content: string}> = [];
-  
+async function getRepresentativeCodeSamples(dirPath: string, files: string[]): Promise<Array<{ filePath: string, content: string }>> {
+  const samples: Array<{ filePath: string, content: string }> = [];
+
   // Get code files with interesting extensions
   const codeExtensions = ['.swift', '.m', '.h', '.c', '.cpp', '.java', '.kt', '.js', '.py'];
   const codeFiles = files.filter(file => codeExtensions.includes(path.extname(file)));
-  
+
   // Get at most 3 representative files
   const representativeFiles = codeFiles.slice(0, 3);
-  
+
   for (const file of representativeFiles) {
     try {
       const content = await fs.readFile(file, 'utf-8');
-      
+
       // Limit content to a reasonable size
       const limitedContent = content.split('\n').slice(0, 50).join('\n');
-      
+
       samples.push({
         filePath: file,
         content: limitedContent
@@ -359,7 +359,7 @@ async function getRepresentativeCodeSamples(dirPath: string, files: string[]): P
       console.error(`Error reading code sample ${file}:`, error);
     }
   }
-  
+
   return samples;
 }
 
@@ -368,7 +368,7 @@ async function getRepresentativeCodeSamples(dirPath: string, files: string[]): P
  */
 function findInterestingFiles(files: string[]): string[] {
   const interestingFiles: string[] = [];
-  
+
   // Look for key files like readmes, main files, etc.
   const patterns = [
     /readme\.(md|txt)/i,                  // README files
@@ -383,7 +383,7 @@ function findInterestingFiles(files: string[]): string[] {
     /index\.(html|js)$/,                  // Web main files
     /package\.json$/                      // Node.js package file
   ];
-  
+
   // Find files matching our patterns
   files.forEach(file => {
     const filename = path.basename(file);
@@ -391,14 +391,14 @@ function findInterestingFiles(files: string[]): string[] {
       interestingFiles.push(file);
     }
   });
-  
+
   // Also add some main.* files directly from the root
   const rootMainFiles = files.filter(file => {
     const dirname = path.dirname(file);
     const filename = path.basename(file);
     return filename.startsWith('Main') && path.basename(dirname) !== 'Resources';
   });
-  
+
   return [...new Set([...interestingFiles, ...rootMainFiles])];
 }
 
@@ -407,7 +407,7 @@ function findInterestingFiles(files: string[]): string[] {
  */
 function getLanguageFromFilename(filename: string): string {
   const ext = path.extname(filename).toLowerCase();
-  
+
   switch (ext) {
     case '.swift': return 'swift';
     case '.m':

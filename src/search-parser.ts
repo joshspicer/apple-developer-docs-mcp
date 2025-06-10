@@ -22,31 +22,31 @@ export function parseSearchResults(html: string, query: string, searchUrl: strin
   try {
     const $ = cheerio.load(html);
     const results: AppleDocSearchResult[] = [];
-    
+
     // Find all search result items
     $('.search-results .search-result').each((i, element) => {
       const resultItem = $(element);
-      
+
       // Extract type (documentation, video, etc.)
-      const resultType = resultItem.hasClass('documentation') ? 'documentation' : 
-                       resultItem.hasClass('video') ? 'video' : 
-                       resultItem.hasClass('sample') ? 'sample' : 
-                       resultItem.hasClass('general') ? 'general' : 'other';
-      
+      const resultType = resultItem.hasClass('documentation') ? 'documentation' :
+        resultItem.hasClass('video') ? 'video' :
+          resultItem.hasClass('sample') ? 'sample' :
+            resultItem.hasClass('general') ? 'general' : 'other';
+
       // Extract title
       const titleElement = resultItem.find('.result-title');
       const title = titleElement.text().trim();
-      
+
       // Extract URL
       const urlElement = titleElement.find('a');
       let url = urlElement.attr('href') || '';
       if (url && url.startsWith('/')) {
         url = `https://developer.apple.com${url}`;
       }
-      
+
       // Extract description
       const description = resultItem.find('.result-description').text().trim();
-      
+
       if (title && url) {
         results.push({
           title,
@@ -56,7 +56,7 @@ export function parseSearchResults(html: string, query: string, searchUrl: strin
         });
       }
     });
-    
+
     // If no results were found
     if (results.length === 0) {
       return {
@@ -68,12 +68,12 @@ export function parseSearchResults(html: string, query: string, searchUrl: strin
         ],
       };
     }
-    
+
     // Format results for display
     const formattedResults = results.map(result => {
       return `## [${result.title}](${result.url})\n${result.description}\n*Type: ${result.type}*\n`;
     }).join('\n');
-    
+
     return {
       content: [
         {
@@ -107,7 +107,7 @@ export function filterResultsByType(results: AppleDocSearchResult[], type: strin
   if (type === 'all') {
     return results;
   }
-  
+
   return results.filter(result => {
     if (type === 'api' && result.type === 'documentation') {
       return true;

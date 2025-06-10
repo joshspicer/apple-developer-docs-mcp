@@ -7,11 +7,11 @@ export function formatJsonDocumentation(jsonData: any, url: string) {
   try {
     // Extract the key information from the JSON structure
     const title = jsonData.title || jsonData.metadata?.title || 'Untitled Documentation';
-    
+
     // Initialize the content sections
     let markdownContent = `# ${title}\n\n`;
     markdownContent += `**Source:** [${url}](${url})\n\n`;
-    
+
     // Add abstract/introduction if available
     if (jsonData.abstract && jsonData.abstract.length > 0) {
       const abstractText = jsonData.abstract.map((item: any) => {
@@ -21,7 +21,7 @@ export function formatJsonDocumentation(jsonData: any, url: string) {
         }
         return '';
       }).join(' ');
-      
+
       markdownContent += `## Overview\n\n${abstractText}\n\n`;
     }
 
@@ -30,7 +30,7 @@ export function formatJsonDocumentation(jsonData: any, url: string) {
       const declarationSection = jsonData.primaryContentSections.find(
         (section: any) => section.kind === 'declarations'
       );
-      
+
       if (declarationSection && declarationSection.declarations) {
         markdownContent += `## Declaration\n\n\`\`\`swift\n`;
         declarationSection.declarations.forEach((declaration: any) => {
@@ -48,7 +48,7 @@ export function formatJsonDocumentation(jsonData: any, url: string) {
       const discussionSection = jsonData.primaryContentSections.find(
         (section: any) => section.kind === 'content'
       );
-      
+
       if (discussionSection && discussionSection.content) {
         markdownContent += `## Description\n\n`;
         discussionSection.content.forEach((content: any) => {
@@ -65,7 +65,7 @@ export function formatJsonDocumentation(jsonData: any, url: string) {
         });
       }
     }
-    
+
     // Add platform availability information
     if (jsonData.availability) {
       markdownContent += `## Availability\n\n`;
@@ -74,7 +74,7 @@ export function formatJsonDocumentation(jsonData: any, url: string) {
       });
       markdownContent += `\n`;
     }
-    
+
     // Add topics/subtopics if available
     if (jsonData.topics && jsonData.topics.length > 0) {
       markdownContent += `## Topics\n\n`;
@@ -82,7 +82,7 @@ export function formatJsonDocumentation(jsonData: any, url: string) {
         if (topic.title) {
           markdownContent += `### ${topic.title}\n\n`;
         }
-        
+
         if (topic.identifiers && topic.identifiers.length > 0) {
           topic.identifiers.forEach((identifier: string) => {
             const reference = jsonData.references && jsonData.references[identifier];
@@ -94,7 +94,7 @@ export function formatJsonDocumentation(jsonData: any, url: string) {
         }
       });
     }
-    
+
     // Add related items if available
     if (jsonData.relationshipsSections && jsonData.relationshipsSections.length > 0) {
       markdownContent += `## Related\n\n`;
@@ -102,7 +102,7 @@ export function formatJsonDocumentation(jsonData: any, url: string) {
         if (section.title) {
           markdownContent += `### ${section.title}\n\n`;
         }
-        
+
         if (section.identifiers && section.identifiers.length > 0) {
           section.identifiers.forEach((identifier: string) => {
             const reference = jsonData.references && jsonData.references[identifier];
@@ -143,14 +143,14 @@ export function formatJsonDocumentation(jsonData: any, url: string) {
 export function formatHtmlDocumentation(html: string, url: string) {
   try {
     const $ = cheerio.load(html);
-    
+
     // Extract the title
     const title = $('h1').first().text().trim() || $('title').text().trim();
-    
+
     // Initialize the content
     let markdownContent = `# ${title}\n\n`;
     markdownContent += `**Source:** [${url}](${url})\n\n`;
-    
+
     // Extract main content
     const mainContent = $('.documentation-main').first();
     if (mainContent.length > 0) {
@@ -159,7 +159,7 @@ export function formatHtmlDocumentation(html: string, url: string) {
       if (description.length > 0) {
         markdownContent += `## Overview\n\n${description.text().trim()}\n\n`;
       }
-      
+
       // Extract code examples
       const codeBlocks = mainContent.find('pre code');
       if (codeBlocks.length > 0) {
@@ -167,13 +167,13 @@ export function formatHtmlDocumentation(html: string, url: string) {
         codeBlocks.each((i, element) => {
           const code = $(element).text().trim();
           const language = $(element).attr('class') || '';
-          const lang = language.includes('swift') ? 'swift' : 
-                      language.includes('objective-c') ? 'objective-c' : '';
-          
+          const lang = language.includes('swift') ? 'swift' :
+            language.includes('objective-c') ? 'objective-c' : '';
+
           markdownContent += `\`\`\`${lang}\n${code}\n\`\`\`\n\n`;
         });
       }
-      
+
       // Extract topics/subtopics
       const topics = mainContent.find('.topics-section');
       if (topics.length > 0) {
@@ -183,19 +183,19 @@ export function formatHtmlDocumentation(html: string, url: string) {
           if (topicTitle) {
             markdownContent += `### ${topicTitle}\n\n`;
           }
-          
+
           $(element).find('.topic').each((j, topicItem) => {
             const topicLink = $(topicItem).find('a');
             const topicText = topicLink.text().trim();
             const topicUrl = topicLink.attr('href');
-            
+
             if (topicText && topicUrl) {
-              const fullUrl = topicUrl.startsWith('http') ? 
+              const fullUrl = topicUrl.startsWith('http') ?
                 topicUrl : `https://developer.apple.com${topicUrl}`;
               markdownContent += `- [${topicText}](${fullUrl})\n`;
             }
           });
-          
+
           markdownContent += `\n`;
         });
       }
@@ -203,14 +203,14 @@ export function formatHtmlDocumentation(html: string, url: string) {
       // Fallback for when the main content container isn't found
       // Remove scripts, styles, and navigation elements
       $('script, style, nav, header, footer').remove();
-      
+
       // Extract the remaining text content
       let content = $('body').text().trim();
       content = content.replace(/\s+/g, ' ').substring(0, 6000);
-      
+
       markdownContent += `## Content\n\n${content}\n\n`;
     }
-    
+
     return {
       content: [
         {

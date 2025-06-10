@@ -42,7 +42,7 @@ class AppleDeveloperDocsMCPServer {
       },
       async (args) => this.searchAppleDocs(args.query, args.type)
     );
-    
+
     // Define get_apple_doc_content tool
     this.server.tool(
       'get_apple_doc_content',
@@ -50,7 +50,7 @@ class AppleDeveloperDocsMCPServer {
       { url: z.string().describe('URL of the Apple Developer Documentation page') },
       async (args) => this.getAppleDocContent(args.url)
     );
-    
+
     // Define download_apple_code_sample tool
     this.server.tool(
       'download_apple_code_sample',
@@ -64,22 +64,22 @@ class AppleDeveloperDocsMCPServer {
     try {
       // Create a search URL for Apple Developer Documentation
       const searchUrl = `https://developer.apple.com/search/?q=${encodeURIComponent(query)}`;
-      
+
       console.error(`Searching Apple docs for: ${query}`);
-      
+
       // Fetch the search results page
       const response = await fetch(searchUrl, {
         headers: {
           'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
         },
       });
-      
+
       if (!response.ok) {
         throw new Error(`Failed to fetch search results: ${response.status}`);
       }
-      
+
       const html = await response.text();
-      
+
       // Parse and return the search results
       return parseSearchResults(html, query, searchUrl);
     } catch (error) {
