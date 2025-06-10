@@ -3,7 +3,7 @@
 I despise reading docs on https://developer.apple.com.  This MCP server will do that for you.
 
 
-![Download Sample Code Demo](demos/download-sample-code.gif)
+![Demo in VS Code](demos/download-sample-code.gif)
 
 ## Usage
 
