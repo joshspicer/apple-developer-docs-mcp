@@ -54,8 +54,8 @@ class AppleDeveloperDocsMCPServer {
     // Define download_apple_code_sample tool
     this.server.tool(
       'download_apple_code_sample',
-      'Download, unzip, and analyze Apple Developer code samples from ZIP files',
-      { zipUrl: z.string().describe('URL of the Apple Developer code sample ZIP file') },
+      'Download, unzip, and analyze Apple Developer code samples. Works with documentation URLs from search_apple_docs results or direct ZIP URLs. Sample code is extracted to ~/AppleSampleCode.',
+      { zipUrl: z.string().describe('URL of the Apple Developer documentation page or direct ZIP download URL') },
       async (args) => this.downloadAppleCodeSample(args.zipUrl)
     );
   }
