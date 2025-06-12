@@ -14,14 +14,7 @@ export function formatJsonDocumentation(jsonData: any, url: string) {
 
     // Add abstract/introduction if available
     if (jsonData.abstract && jsonData.abstract.length > 0) {
-      const abstractText = jsonData.abstract.map((item: any) => {
-        if (item.text) return item.text;
-        if (item.inlineContent) {
-          return item.inlineContent.map((content: any) => content.text || '').join('');
-        }
-        return '';
-      }).join(' ');
-
+      const abstractText = processInlineContent(jsonData.abstract);
       markdownContent += `## Overview\n\n${abstractText}\n\n`;
     }
 
@@ -51,34 +44,59 @@ export function formatJsonDocumentation(jsonData: any, url: string) {
 
       if (discussionSection && discussionSection.content) {
         markdownContent += `## Description\n\n`;
-        discussionSection.content.forEach((content: any) => {
-          if (content.type === 'paragraph' && content.inlineContent) {
-            const paragraphText = content.inlineContent
-              .map((inline: any) => inline.text || '')
-              .join('');
-            markdownContent += `${paragraphText}\n\n`;
-          } else if (content.type === 'heading') {
-            markdownContent += `### ${content.text}\n\n`;
-          } else if (content.type === 'codeBlock') {
-            markdownContent += `\`\`\`${content.syntax || ''}\n${content.code || ''}\n\`\`\`\n\n`;
+        markdownContent += processContentItems(discussionSection.content, jsonData.references);
+      }
+
+      // Add parameters if available
+      const parametersSection = jsonData.primaryContentSections.find(
+        (section: any) => section.kind === 'parameters'
+      );
+
+      if (parametersSection && parametersSection.parameters) {
+        markdownContent += `## Parameters\n\n`;
+        parametersSection.parameters.forEach((param: any) => {
+          markdownContent += `### \`${param.name}\`\n\n`;
+          if (param.content) {
+            markdownContent += processContentItems(param.content, jsonData.references);
           }
         });
+      }
+
+      // Add return value if available
+      const returnSection = jsonData.primaryContentSections.find(
+        (section: any) => section.kind === 'returnValue'
+      );
+
+      if (returnSection && returnSection.content) {
+        markdownContent += `## Return Value\n\n`;
+        markdownContent += processContentItems(returnSection.content, jsonData.references);
       }
     }
 
     // Add platform availability information
-    if (jsonData.availability) {
+    if (jsonData.metadata && jsonData.metadata.platforms) {
       markdownContent += `## Availability\n\n`;
-      Object.entries(jsonData.availability).forEach(([platform, info]: [string, any]) => {
-        markdownContent += `- **${platform}**: ${info.introduced || 'N/A'}\n`;
+      jsonData.metadata.platforms.forEach((platform: any) => {
+        const betaStatus = platform.beta ? ' (Beta)' : '';
+        markdownContent += `- **${platform.name}${betaStatus}**: Introduced in ${platform.introducedAt}\n`;
       });
       markdownContent += `\n`;
     }
 
+    // Add sample code if available
+    if (jsonData.sampleCodeDownload) {
+      markdownContent += `## Sample Code\n\n`;
+      if (jsonData.sampleCodeDownload.action && jsonData.sampleCodeDownload.action.identifier) {
+        const sampleId = jsonData.sampleCodeDownload.action.identifier;
+        const sampleUrl = `https://docs-assets.developer.apple.com/published/${sampleId}`;
+        markdownContent += `Download sample code: [${jsonData.sampleCodeDownload.title || 'Sample Code'}](${sampleUrl})\n\n`;
+      }
+    }
+
     // Add topics/subtopics if available
-    if (jsonData.topics && jsonData.topics.length > 0) {
+    if (jsonData.topicSections && jsonData.topicSections.length > 0) {
       markdownContent += `## Topics\n\n`;
-      jsonData.topics.forEach((topic: any) => {
+      jsonData.topicSections.forEach((topic: any) => {
         if (topic.title) {
           markdownContent += `### ${topic.title}\n\n`;
         }
@@ -87,7 +105,11 @@ export function formatJsonDocumentation(jsonData: any, url: string) {
           topic.identifiers.forEach((identifier: string) => {
             const reference = jsonData.references && jsonData.references[identifier];
             if (reference) {
-              markdownContent += `- [${reference.title || identifier}](https://developer.apple.com/documentation/${reference.url || identifier})\n`;
+              const abstract = reference.abstract ? processInlineContent(reference.abstract) : '';
+              markdownContent += `- [${reference.title || identifier}](https://developer.apple.com${reference.url || ''})\n`;
+              if (abstract) {
+                markdownContent += `  ${abstract}\n`;
+              }
             }
           });
           markdownContent += `\n`;
@@ -107,7 +129,36 @@ export function formatJsonDocumentation(jsonData: any, url: string) {
           section.identifiers.forEach((identifier: string) => {
             const reference = jsonData.references && jsonData.references[identifier];
             if (reference) {
-              markdownContent += `- [${reference.title || identifier}](https://developer.apple.com/documentation/${reference.url || identifier})\n`;
+              markdownContent += `- [${reference.title || identifier}](https://developer.apple.com${reference.url || ''})\n`;
+            }
+          });
+          markdownContent += `\n`;
+        }
+      });
+    }
+
+    // Add see also section if available
+    if (jsonData.seeAlsoSections && jsonData.seeAlsoSections.length > 0) {
+      markdownContent += `## See Also\n\n`;
+      jsonData.seeAlsoSections.forEach((section: any) => {
+        if (section.title) {
+          markdownContent += `### ${section.title}\n\n`;
+        }
+
+        if (section.identifiers && section.identifiers.length > 0) {
+          section.identifiers.forEach((identifier: string) => {
+            // Handle both internal and external references
+            if (identifier.startsWith('http')) {
+              // External URL
+              markdownContent += `- [${extractTitleFromUrl(identifier)}](${identifier})\n`;
+            } else {
+              const reference = jsonData.references && jsonData.references[identifier];
+              if (reference) {
+                const linkUrl = reference.url ? 
+                  (reference.url.startsWith('http') ? reference.url : `https://developer.apple.com${reference.url}`) : 
+                  '';
+                markdownContent += `- [${reference.title || identifier}](${linkUrl})\n`;
+              }
             }
           });
           markdownContent += `\n`;
@@ -134,6 +185,113 @@ export function formatJsonDocumentation(jsonData: any, url: string) {
         },
       ],
     };
+  }
+}
+
+/**
+ * Process inline content from Apple Documentation JSON
+ */
+function processInlineContent(items: any[]): string {
+  if (!items || !Array.isArray(items)) return '';
+  
+  return items.map((item: any) => {
+    if (item.text) return item.text;
+    if (item.inlineContent) {
+      return processInlineContent(item.inlineContent);
+    }
+    if (item.type === 'reference' && item.identifier) {
+      return `\`${item.identifier.split('/').pop()}\``;
+    }
+    return '';
+  }).join('');
+}
+
+/**
+ * Process content items from Apple Documentation JSON
+ */
+function processContentItems(items: any[], references: any = {}): string {
+  if (!items || !Array.isArray(items)) return '';
+  
+  let result = '';
+  
+  items.forEach((item: any) => {
+    if (item.type === 'paragraph' && item.inlineContent) {
+      result += `${processInlineContent(item.inlineContent)}\n\n`;
+    } 
+    else if (item.type === 'heading') {
+      result += `### ${item.text}\n\n`;
+    }
+    else if (item.type === 'codeBlock') {
+      result += `\`\`\`${item.syntax || ''}\n${item.code || ''}\n\`\`\`\n\n`;
+    }
+    else if (item.type === 'unorderedList' && item.items) {
+      item.items.forEach((listItem: any) => {
+        if (listItem.content) {
+          result += `- ${processContentItems(listItem.content, references).trim()}\n`;
+        }
+      });
+      result += '\n';
+    }
+    else if (item.type === 'orderedList' && item.items) {
+      item.items.forEach((listItem: any, index: number) => {
+        if (listItem.content) {
+          result += `${index + 1}. ${processContentItems(listItem.content, references).trim()}\n`;
+        }
+      });
+      result += '\n';
+    }
+    else if (item.type === 'aside' && item.style && item.content) {
+      result += `> **${item.style.toUpperCase()}**: ${processContentItems(item.content, references).trim()}\n\n`;
+    }
+    else if (item.type === 'codeListing') {
+      if (item.syntax) {
+        result += `\`\`\`${item.syntax}\n`;
+      } else {
+        result += '```\n';
+      }
+      
+      if (item.fileLocation) {
+        result += `// ${item.fileLocation}\n`;
+      }
+      
+      if (item.code) {
+        result += `${item.code}\n`;
+      }
+      
+      result += '```\n\n';
+    }
+    else if (item.type === 'image' && item.identifier) {
+      const image = references && references[item.identifier];
+      if (image && image.variants && image.variants.length > 0) {
+        const imageUrl = image.variants[0].url;
+        const altText = image.alt || 'Image';
+        result += `![${altText}](${imageUrl})\n\n`;
+      }
+    }
+  });
+  
+  return result;
+}
+
+/**
+ * Extract a title from a URL for display purposes
+ */
+function extractTitleFromUrl(url: string): string {
+  try {
+    const pathParts = new URL(url).pathname.split('/');
+    let lastPart = pathParts[pathParts.length - 1];
+    
+    // Remove file extension if present
+    if (lastPart.includes('.')) {
+      lastPart = lastPart.split('.')[0];
+    }
+    
+    // Format the title: replace hyphens with spaces and capitalize
+    return lastPart
+      .replace(/-/g, ' ')
+      .replace(/\b\w/g, c => c.toUpperCase());
+  } catch {
+    return url;
   }
 }
 
