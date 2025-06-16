@@ -1,6 +1,6 @@
 {
   "name": "apple-developer-docs-mcp",
-  "version": "1.1.1",
+  "version": "1.1.2",
   "description": "An MCP server that fetches the right data from Apple's developer documentation site",
   "main": "dist/index.js",
   "type": "module",
