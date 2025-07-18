@@ -1,6 +1,6 @@
 {
   "servers": {
-    "apple-developer-docs": {
+    "apple-developer-docs-dev": {
       "command": "node",
       "args": ["dist/index.js"],
       "cwd": "${workspaceFolder}",
