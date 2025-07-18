@@ -3,7 +3,13 @@
     "apple-developer-docs": {
       "command": "node",
       "args": ["dist/index.js"],
-      "cwd": "${workspaceFolder}"
+      "cwd": "${workspaceFolder}",
+      "dev": {
+        "watch": "dist/index.js",
+        "debug": {
+          "type": "node"
+        }
+      }
     }
   }
 }

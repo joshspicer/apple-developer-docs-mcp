@@ -31,7 +31,7 @@
     "typescript": "^5.0.0"
   },
   "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.12.1",
+    "@modelcontextprotocol/sdk": "^1.16.0",
     "@types/adm-zip": "^0.5.7",
     "adm-zip": "^0.5.16",
     "cheerio": "^1.1.0",
