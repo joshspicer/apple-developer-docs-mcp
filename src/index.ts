@@ -1,18 +1,25 @@
 #!/usr/bin/env node
 
-import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import { McpServer, ResourceTemplate } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { z } from 'zod';
 import fetch from 'node-fetch';
-import { formatJsonDocumentation, formatHtmlDocumentation } from './doc-parsers.js';
+import { ResourceLink, EmbeddedResource } from '@modelcontextprotocol/sdk/types.js';
 import { parseSearchResults, filterResultsByType, AppleDocSearchResult } from './search-parser.js';
 import { downloadAndAnalyzeCodeSample } from './download-helper.js';
-import { fetchAppleDocJson } from './doc-fetcher.js';
+import { fetchAppleDocJson, fetchAppleDocJsonCached } from './doc-fetcher.js';
 import { DocumentSummarizer } from './summarizer.js';
+import { DocumentCache } from './cache/document-cache.js';
+import { ResourceManager } from './cache/resource-manager.js';
+import { CacheIntegration } from './cache/cache-integration.js';
+import { setCacheIntegration } from './doc-parsers.js';
 
 class AppleDeveloperDocsMCPServer {
   private server: McpServer;
   private summarizer: DocumentSummarizer;
+  private cache: DocumentCache;
+  private resourceManager: ResourceManager;
+  private cacheIntegration: CacheIntegration;
 
   constructor() {
     this.server = new McpServer({
@@ -20,8 +27,20 @@ class AppleDeveloperDocsMCPServer {
       version: '1.0.0',
     });
 
+    this.cache = new DocumentCache();
+    this.resourceManager = new ResourceManager(this.server, this.cache);
+
+    // Disable resource registration in the cache integration since we're using the new resource template approach
+    this.cacheIntegration = new CacheIntegration(this.cache, this.resourceManager, {
+      registerResources: false  // Disable old resource registration
+    });
+
+    // Set up global cache integration for doc-parsers
+    setCacheIntegration(this.cacheIntegration);
+
     this.summarizer = new DocumentSummarizer(this.server);
     this.setupTools();
+    this.setupResources();
     this.setupErrorHandling();
   }
 
@@ -35,6 +54,7 @@ class AppleDeveloperDocsMCPServer {
         type: z.enum(['all', 'api', 'guide', 'sample', 'video']).default('all')
           .describe('Type of documentation to search for')
       },
+      { readOnlyHint: true },
       async (args) => this.searchAppleDocs(args.query, args.type)
     );
 
@@ -43,6 +63,7 @@ class AppleDeveloperDocsMCPServer {
       'get_apple_doc_content',
       'Get detailed content from a specific Apple Developer Documentation page by recursively fetching and parsing its JSON API data',
       { url: z.string().describe('URL of the Apple Developer Documentation page') },
+      { readOnlyHint: true },
       async (args) => this.getAppleDocContent(args.url)
     );
 
@@ -51,6 +72,7 @@ class AppleDeveloperDocsMCPServer {
       'download_apple_code_sample',
       'Download, unzip, and analyze Apple Developer code samples. Works with documentation URLs from search_apple_docs results or direct ZIP URLs. When using direct ZIP URLs from get_apple_doc_content results, extract the identifier from sampleCodeDownload.action.identifier and prepend "https://docs-assets.developer.apple.com/published/" to form the complete URL. Sample code is extracted to ~/AppleSampleCode.',
       { zipUrl: z.string().describe('URL of the Apple Developer documentation page or direct ZIP download URL from docs-assets.developer.apple.com (e.g., https://docs-assets.developer.apple.com/published/f14a9bc447c5/DisplayingOverlaysOnAMap.zip)') },
+      { readOnlyHint: false },
       async (args) => this.downloadAppleCodeSample(args.zipUrl)
     );
 
@@ -64,7 +86,104 @@ class AppleDeveloperDocsMCPServer {
         max_docs: z.number().min(1).max(10).default(5).describe('Maximum number of documents to analyze (1-10, default: 5)'),
         depth: z.enum(['s', 'm', 'l', 'xl']).default('m').describe('Length of the explanation: s=brief, m=moderate, l=detailed, xl=comprehensive')
       },
+      { readOnlyHint: true },
       async (args, { sendNotification, _meta }) => this.researchAppleDocs(args.docs_query, args.user_question, args.max_docs, args.depth, sendNotification, _meta?.progressToken)
+    );
+
+
+  }
+
+  private setupResources() {
+    // Register a resource template that can serve any cached Apple Developer documentation
+    // This uses the apple-docs://{slug} pattern
+    this.server.registerResource(
+      'apple-docs',
+      new ResourceTemplate('apple-docs://{framework}/{+path}', {
+        list: async () => {
+          // Return all currently cached documents as resources
+          const allDocs = this.cache.getAll();
+          return {
+            resources: allDocs.map(doc => {
+              const uri = this.generateDocsUri(doc.url);
+              const slug = uri.replace('apple-docs://', '');
+
+              // Create a unique, descriptive name from the URI path
+              const nameParts = slug.split('/');
+              const uniqueName = nameParts.length > 1
+                ? `${nameParts[0]}/${nameParts[nameParts.length - 1]}` // e.g., "uikit/gesturerecognizers"
+                : slug; // e.g., "swiftui"
+
+              return {
+                name: uniqueName,
+                uri: uri,
+                description: `Apple Developer documentation: ${doc.title}`,
+                mimeType: 'text/markdown'
+              };
+            })
+          };
+        }
+      }),
+      {
+        title: 'Apple Developer Documentation',
+        description: 'Cached Apple Developer documentation pages',
+        mimeType: 'text/markdown'
+      },
+      async (uri, { framework, path }) => {
+        // Reconstruct the slug from framework and path
+        const slug = path ? `${framework}/${path}` : framework;
+        console.error(`Reconstructed slug: ${slug}`);
+
+        // Find the cached document that matches this slug
+        const allDocs = this.cache.getAll();
+        console.error(`Available docs: ${allDocs.map(doc => this.generateDocsUri(doc.url)).join(', ')}`);
+
+        // Try exact match first
+        let matchingDoc = allDocs.find(doc => this.generateDocsUri(doc.url) === `apple-docs://${slug}`);
+
+        // If no exact match, try to find by slug pattern in the original URL
+        if (!matchingDoc) {
+          console.error(`No exact match found, trying pattern matching for slug: ${slug}`);
+          matchingDoc = allDocs.find(doc => {
+            const docUri = this.generateDocsUri(doc.url);
+            const docSlug = docUri.replace('apple-docs://', '');
+            console.error(`Comparing slug '${slug}' with doc slug '${docSlug}'`);
+            return docSlug === slug;
+          });
+        }
+
+        // If still no match, try to find by URL path segments
+        if (!matchingDoc) {
+          console.error(`No pattern match found, trying URL path matching for slug: ${slug}`);
+          matchingDoc = allDocs.find(doc => {
+            try {
+              const urlObj = new URL(doc.url);
+              const pathParts = urlObj.pathname.split('/').filter(p => p.length > 0);
+              const cleanParts = pathParts.filter(p => p !== 'documentation');
+              const urlSlug = cleanParts.join('/');
+              console.error(`URL slug for ${doc.url}: ${urlSlug}`);
+              return urlSlug === slug;
+            } catch (error) {
+              return false;
+            }
+          });
+        }
+
+        if (!matchingDoc) {
+          console.error(`No matching document found for slug: ${slug}`);
+          console.error(`Available document URLs: ${allDocs.map(doc => doc.url).join(', ')}`);
+          throw new Error(`Documentation not found for slug: ${slug}`);
+        }
+
+        console.error(`Found matching document: ${matchingDoc.title} for ${matchingDoc.url}`);
+
+        return {
+          contents: [{
+            uri: uri.href,
+            text: matchingDoc.markdown,
+            mimeType: 'text/markdown'
+          }]
+        };
+      }
     );
   }
 
@@ -105,12 +224,59 @@ class AppleDeveloperDocsMCPServer {
   }
 
   private async getAppleDocContent(url: string) {
-    // Use the JSON fetching approach to get documentation content
-    return fetchAppleDocJson(url);
+    // Use the cached JSON fetching approach to get documentation content
+    const result = await fetchAppleDocJsonCached(url);
+
+    // If the document was cached, add an EmbeddedResource to include the content
+    const cachedDoc = this.cache.get(url);
+    if (cachedDoc && !result.isError) {
+      const resourceUri = this.generateDocsUri(url);
+      const embeddedResource: EmbeddedResource = {
+        type: 'resource',
+        resource: {
+          uri: resourceUri,
+          name: cachedDoc.title || 'Apple Developer Documentation',
+          description: `Cached documentation: ${cachedDoc.title}`,
+          mimeType: 'text/markdown',
+          text: cachedDoc.markdown
+        }
+      };
+
+      // Add the embedded resource to the content
+      return {
+        content: [
+          ...result.content,
+          embeddedResource
+        ]
+      };
+    }
+
+    return result;
   }
 
   private async downloadAppleCodeSample(zipUrl: string) {
     return downloadAndAnalyzeCodeSample(zipUrl);
+  }
+
+  /**
+   * Generate docs URI from Apple Developer documentation URL
+   * Pattern: apple-docs://{{slug}} where slug is derived from the URL path
+   */
+  private generateDocsUri(url: string): string {
+    try {
+      const urlObj = new URL(url);
+      const pathParts = urlObj.pathname.split('/').filter(p => p.length > 0);
+
+      // Remove 'documentation' from path if present and create a clean slug
+      const cleanParts = pathParts.filter(p => p !== 'documentation');
+      const slug = cleanParts.join('/') || 'unknown';
+
+      return `apple-docs://${slug}`;
+    } catch (error) {
+      // Fallback for invalid URLs
+      const hash = this.cache.generateCacheKey(url);
+      return `apple-docs://doc-${hash.substring(0, 8)}`;
+    }
   }
 
   private async researchAppleDocs(
@@ -209,13 +375,19 @@ class AppleDeveloperDocsMCPServer {
 
       // Send progress notification before AI summarization
       if (sendNotification && progressToken) {
+        const niceDepth = {
+          's': 'brief',
+          'm': 'moderate',
+          'l': 'detailed',
+          'xl': 'comprehensive'
+        }[depth];
         await sendNotification({
           method: "notifications/progress",
           params: {
             progressToken,
             progress: 70,
             total: 100,
-            message: `Analyzing content with AI (${depth} depth - ${maxTokens} tokens)...`
+            message: `Generating ${niceDepth} answer ...`
           }
         });
       }
@@ -230,25 +402,31 @@ class AppleDeveloperDocsMCPServer {
         docsQuery
       );
 
-      // Step 4: Format and return results
-      // Send progress notification before formatting
-      if (sendNotification && progressToken) {
-        await sendNotification({
-          method: "notifications/progress",
-          params: {
-            progressToken,
-            progress: 90,
-            total: 100,
-            message: "Formatting final results..."
-          }
-        });
-      }
-
       const formattedResult = summarizer.formatResult(
         summarizationResult,
         docsQuery,
         userQuestion
       );
+
+      // Add EmbeddedResources for all cached documents that were used
+      const embeddedResources: EmbeddedResource[] = [];
+      for (const result of limitedResults) {
+        const cachedDoc = this.cache.get(result.url);
+        if (cachedDoc) {
+          const resourceUri = this.generateDocsUri(result.url);
+          const embeddedResource: EmbeddedResource = {
+            type: 'resource',
+            resource: {
+              uri: resourceUri,
+              name: cachedDoc.title || result.title,
+              description: `Source documentation: ${cachedDoc.title || result.title}`,
+              mimeType: 'text/markdown',
+              text: cachedDoc.markdown
+            }
+          };
+          embeddedResources.push(embeddedResource);
+        }
+      }
 
       // Send final progress notification
       if (sendNotification && progressToken) {
@@ -258,7 +436,7 @@ class AppleDeveloperDocsMCPServer {
             progressToken,
             progress: 100,
             total: 100,
-            message: "Research complete!"
+            message: `Researched "${userQuestion}"`
           }
         });
       }
@@ -268,7 +446,8 @@ class AppleDeveloperDocsMCPServer {
           {
             type: "text" as const,
             text: formattedResult,
-          }
+          },
+          ...embeddedResources
         ],
       };
 

@@ -1,4 +1,47 @@
 import * as cheerio from 'cheerio';
+import { CacheIntegration, CacheIntegrationResult } from './cache/cache-integration.js';
+
+// Global cache integration instance (will be set by the main server)
+let cacheIntegration: CacheIntegration | null = null;
+
+/**
+ * Set the global cache integration instance
+ */
+export function setCacheIntegration(integration: CacheIntegration): void {
+  cacheIntegration = integration;
+}
+
+/**
+ * Cache-aware wrapper for formatJsonDocumentation
+ */
+export async function formatJsonDocumentationCached(jsonData: any, url: string, options?: { skipCache?: boolean }): Promise<CacheIntegrationResult> {
+  if (cacheIntegration) {
+    return cacheIntegration.cacheAwareFormat(url, () => formatJsonDocumentation(jsonData, url), options);
+  }
+
+  // Fallback to non-cached version
+  return {
+    content: formatJsonDocumentation(jsonData, url),
+    fromCache: false,
+    cacheKey: ''
+  };
+}
+
+/**
+ * Cache-aware wrapper for formatHtmlDocumentation
+ */
+export async function formatHtmlDocumentationCached(html: string, url: string, options?: { skipCache?: boolean }): Promise<CacheIntegrationResult> {
+  if (cacheIntegration) {
+    return cacheIntegration.cacheAwareFormat(url, () => formatHtmlDocumentation(html, url), options);
+  }
+
+  // Fallback to non-cached version
+  return {
+    content: formatHtmlDocumentation(html, url),
+    fromCache: false,
+    cacheKey: ''
+  };
+}
 
 /**
  * Format JSON documentation from Apple Developer Documentation
