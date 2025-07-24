@@ -5,6 +5,31 @@ import { CacheIntegration, CacheIntegrationResult } from './cache/cache-integrat
 let cacheIntegration: CacheIntegration | null = null;
 
 /**
+ * Resource link type for MCP tool responses
+ */
+interface ResourceLink {
+  type: "resource_link";
+  uri: string;
+  name: string;
+  title?: string;
+  description?: string;
+  mimeType?: string;
+}
+
+/**
+ * Content block type that can include text or resource links
+ */
+interface ContentBlock {
+  type: "text" | "resource_link";
+  text?: string;
+  uri?: string;
+  name?: string;
+  title?: string;
+  description?: string;
+  mimeType?: string;
+}
+
+/**
  * Set the global cache integration instance
  */
 export function setCacheIntegration(integration: CacheIntegration): void {
@@ -12,14 +37,116 @@ export function setCacheIntegration(integration: CacheIntegration): void {
 }
 
 /**
+ * Create a resource link from Apple documentation reference
+ */
+function createResourceLink(reference: any, identifier: string): ResourceLink {
+  let uri = '';
+  
+  if (reference?.url) {
+    uri = reference.url.startsWith('http') ? reference.url : `https://developer.apple.com${reference.url}`;
+  } else if (identifier.startsWith('http')) {
+    uri = identifier;
+  } else {
+    // Fallback to identifier-based URL
+    uri = `https://developer.apple.com/documentation/${identifier.replace(/^doc:\/\//, '').replace(/\./g, '/')}`;
+  }
+
+  const name = reference?.title || extractTitleFromUrl(uri) || identifier.split('/').pop() || identifier;
+  const description = reference?.abstract ? processInlineContent(reference.abstract) : undefined;
+
+  return {
+    type: "resource_link",
+    uri,
+    name,
+    description,
+    mimeType: "text/html"
+  };
+}
+
+/**
+ * Create a resource link for sample code downloads
+ */
+function createSampleCodeResourceLink(sampleCodeData: any): ResourceLink | null {
+  if (!sampleCodeData?.action?.identifier) {
+    return null;
+  }
+
+  const sampleId = sampleCodeData.action.identifier;
+  const sampleUrl = `https://docs-assets.developer.apple.com/published/${sampleId}`;
+  const name = sampleCodeData.title || 'Sample Code';
+
+  return {
+    type: "resource_link",
+    uri: sampleUrl,
+    name,
+    description: "Downloadable sample code from Apple Developer Documentation",
+    mimeType: "application/zip"
+  };
+}
+
+/**
+ * Create resource links from topic identifiers
+ */
+function createTopicResourceLinks(identifiers: string[], references: any = {}): ResourceLink[] {
+  if (!identifiers || !Array.isArray(identifiers)) {
+    return [];
+  }
+
+  return identifiers.map(identifier => {
+    const reference = references[identifier];
+    return createResourceLink(reference, identifier);
+  }).filter(Boolean);
+}
+
+/**
+ * Create resource links from HTML topic elements
+ */
+function createHtmlTopicResourceLinks($: cheerio.CheerioAPI, topicElements: cheerio.Cheerio): ResourceLink[] {
+  const resourceLinks: ResourceLink[] = [];
+
+  topicElements.each((_j: number, topicItem: any) => {
+    const topicLink = $(topicItem).find('a');
+    const topicText = topicLink.text().trim();
+    const topicUrl = topicLink.attr('href');
+
+    if (topicText && topicUrl) {
+      const fullUrl = topicUrl.startsWith('http') ?
+        topicUrl : `https://developer.apple.com${topicUrl}`;
+      
+      resourceLinks.push({
+        type: "resource_link",
+        uri: fullUrl,
+        name: topicText,
+        description: "Related Apple Developer Documentation",
+        mimeType: "text/html"
+      });
+    }
+  });
+
+  return resourceLinks;
+}
+
+/**
  * Cache-aware wrapper for formatJsonDocumentation
  */
 export async function formatJsonDocumentationCached(jsonData: any, url: string, options?: { skipCache?: boolean }): Promise<CacheIntegrationResult> {
   if (cacheIntegration) {
-    return cacheIntegration.cacheAwareFormat(url, () => formatJsonDocumentation(jsonData, url), options);
+    return cacheIntegration.cacheAwareFormat(url, () => {
+      const result = formatJsonDocumentation(jsonData, url);
+      // Convert ContentBlock array to single text block for caching
+      const textBlocks = result.content.filter(block => block.type === 'text').map(block => block.text || '');
+      const combinedText = textBlocks.join('\n\n');
+      
+      return {
+        content: [{
+          type: "text" as const,
+          text: combinedText,
+        }],
+      };
+    }, options);
   }
 
-  // Fallback to non-cached version
+  // Fallback to non-cached version - return full ContentBlock array
   return {
     content: formatJsonDocumentation(jsonData, url),
     fromCache: false,
@@ -32,10 +159,22 @@ export async function formatJsonDocumentationCached(jsonData: any, url: string, 
  */
 export async function formatHtmlDocumentationCached(html: string, url: string, options?: { skipCache?: boolean }): Promise<CacheIntegrationResult> {
   if (cacheIntegration) {
-    return cacheIntegration.cacheAwareFormat(url, () => formatHtmlDocumentation(html, url), options);
+    return cacheIntegration.cacheAwareFormat(url, () => {
+      const result = formatHtmlDocumentation(html, url);
+      // Convert ContentBlock array to single text block for caching
+      const textBlocks = result.content.filter(block => block.type === 'text').map(block => block.text || '');
+      const combinedText = textBlocks.join('\n\n');
+      
+      return {
+        content: [{
+          type: "text" as const,
+          text: combinedText,
+        }],
+      };
+    }, options);
   }
 
-  // Fallback to non-cached version
+  // Fallback to non-cached version - return full ContentBlock array
   return {
     content: formatHtmlDocumentation(html, url),
     fromCache: false,
@@ -51,7 +190,10 @@ export function formatJsonDocumentation(jsonData: any, url: string) {
     // Extract the key information from the JSON structure
     const title = jsonData.title || jsonData.metadata?.title || 'Untitled Documentation';
 
-    // Initialize the content sections
+    // Initialize content blocks with main content
+    const contentBlocks: ContentBlock[] = [];
+
+    // Add main documentation text
     let markdownContent = `# ${title}\n\n`;
     markdownContent += `**Source:** [${url}](${url})\n\n`;
 
@@ -126,96 +268,66 @@ export function formatJsonDocumentation(jsonData: any, url: string) {
       markdownContent += `\n`;
     }
 
-    // Add sample code if available
+    // Add the main documentation content
+    contentBlocks.push({
+      type: "text",
+      text: markdownContent
+    });
+
+    // Add sample code as resource link if available
     if (jsonData.sampleCodeDownload) {
-      markdownContent += `## Sample Code\n\n`;
-      if (jsonData.sampleCodeDownload.action && jsonData.sampleCodeDownload.action.identifier) {
-        const sampleId = jsonData.sampleCodeDownload.action.identifier;
-        const sampleUrl = `https://docs-assets.developer.apple.com/published/${sampleId}`;
-        markdownContent += `Download sample code: [${jsonData.sampleCodeDownload.title || 'Sample Code'}](${sampleUrl})\n\n`;
+      const sampleCodeLink = createSampleCodeResourceLink(jsonData.sampleCodeDownload);
+      if (sampleCodeLink) {
+        contentBlocks.push(sampleCodeLink);
       }
     }
 
-    // Add topics/subtopics if available
+    // Add topics/subtopics as resource links
     if (jsonData.topicSections && jsonData.topicSections.length > 0) {
-      markdownContent += `## Topics\n\n`;
       jsonData.topicSections.forEach((topic: any) => {
-        if (topic.title) {
-          markdownContent += `### ${topic.title}\n\n`;
-        }
-
         if (topic.identifiers && topic.identifiers.length > 0) {
-          topic.identifiers.forEach((identifier: string) => {
-            const reference = jsonData.references && jsonData.references[identifier];
-            if (reference) {
-              const abstract = reference.abstract ? processInlineContent(reference.abstract) : '';
-              markdownContent += `- [${reference.title || identifier}](https://developer.apple.com${reference.url || ''})\n`;
-              if (abstract) {
-                markdownContent += `  ${abstract}\n`;
-              }
-            }
-          });
-          markdownContent += `\n`;
+          const topicLinks = createTopicResourceLinks(topic.identifiers, jsonData.references);
+          contentBlocks.push(...topicLinks);
         }
       });
     }
 
-    // Add related items if available
+    // Add related items as resource links
     if (jsonData.relationshipsSections && jsonData.relationshipsSections.length > 0) {
-      markdownContent += `## Related\n\n`;
       jsonData.relationshipsSections.forEach((section: any) => {
-        if (section.title) {
-          markdownContent += `### ${section.title}\n\n`;
-        }
-
         if (section.identifiers && section.identifiers.length > 0) {
-          section.identifiers.forEach((identifier: string) => {
-            const reference = jsonData.references && jsonData.references[identifier];
-            if (reference) {
-              markdownContent += `- [${reference.title || identifier}](https://developer.apple.com${reference.url || ''})\n`;
-            }
-          });
-          markdownContent += `\n`;
+          const relatedLinks = createTopicResourceLinks(section.identifiers, jsonData.references);
+          contentBlocks.push(...relatedLinks);
         }
       });
     }
 
-    // Add see also section if available
+    // Add see also section as resource links
     if (jsonData.seeAlsoSections && jsonData.seeAlsoSections.length > 0) {
-      markdownContent += `## See Also\n\n`;
       jsonData.seeAlsoSections.forEach((section: any) => {
-        if (section.title) {
-          markdownContent += `### ${section.title}\n\n`;
-        }
-
         if (section.identifiers && section.identifiers.length > 0) {
           section.identifiers.forEach((identifier: string) => {
-            // Handle both internal and external references
             if (identifier.startsWith('http')) {
               // External URL
-              markdownContent += `- [${extractTitleFromUrl(identifier)}](${identifier})\n`;
+              contentBlocks.push({
+                type: "resource_link",
+                uri: identifier,
+                name: extractTitleFromUrl(identifier),
+                description: "External reference from Apple Developer Documentation",
+                mimeType: "text/html"
+              });
             } else {
               const reference = jsonData.references && jsonData.references[identifier];
-              if (reference) {
-                const linkUrl = reference.url ? 
-                  (reference.url.startsWith('http') ? reference.url : `https://developer.apple.com${reference.url}`) : 
-                  '';
-                markdownContent += `- [${reference.title || identifier}](${linkUrl})\n`;
-              }
+              const resourceLink = createResourceLink(reference, identifier);
+              contentBlocks.push(resourceLink);
             }
           });
-          markdownContent += `\n`;
         }
       });
     }
 
     return {
-      content: [
-        {
-          type: "text" as const,
-          text: markdownContent,
-        },
-      ],
+      content: contentBlocks,
     };
   } catch (error) {
     console.error('Error formatting JSON documentation:', error);
@@ -348,7 +460,10 @@ export function formatHtmlDocumentation(html: string, url: string) {
     // Extract the title
     const title = $('h1').first().text().trim() || $('title').text().trim();
 
-    // Initialize the content
+    // Initialize content blocks
+    const contentBlocks: ContentBlock[] = [];
+
+    // Initialize the main content
     let markdownContent = `# ${title}\n\n`;
     markdownContent += `**Source:** [${url}](${url})\n\n`;
 
@@ -365,7 +480,7 @@ export function formatHtmlDocumentation(html: string, url: string) {
       const codeBlocks = mainContent.find('pre code');
       if (codeBlocks.length > 0) {
         markdownContent += `## Code Examples\n\n`;
-        codeBlocks.each((i, element) => {
+        codeBlocks.each((_i: number, element: any) => {
           const code = $(element).text().trim();
           const language = $(element).attr('class') || '';
           const lang = language.includes('swift') ? 'swift' :
@@ -375,29 +490,38 @@ export function formatHtmlDocumentation(html: string, url: string) {
         });
       }
 
-      // Extract topics/subtopics
+      // Add main documentation content
+      contentBlocks.push({
+        type: "text",
+        text: markdownContent
+      });
+
+      // Extract topics/subtopics as resource links
       const topics = mainContent.find('.topics-section');
       if (topics.length > 0) {
-        markdownContent += `## Topics\n\n`;
-        topics.each((i, element) => {
-          const topicTitle = $(element).find('.topics-section-title').text().trim();
-          if (topicTitle) {
-            markdownContent += `### ${topicTitle}\n\n`;
+        topics.each((_i: number, element: any) => {
+          const topicItems = $(element).find('.topic');
+          if (topicItems.length > 0) {
+            topicItems.each((_j: number, topicElement: any) => {
+              const topicLink = $(topicElement).find('a');
+              const topicText = topicLink.text().trim();
+              const topicUrl = topicLink.attr('href');
+
+              if (topicText && topicUrl) {
+                const fullUrl = topicUrl.startsWith('http') ?
+                  topicUrl : `https://developer.apple.com${topicUrl}`;
+                
+                contentBlocks.push({
+                  type: "resource_link",
+                  uri: fullUrl,
+                  name: topicText,
+                  title: topicText,
+                  description: `Apple Developer Documentation: ${topicText}`,
+                  mimeType: "text/html"
+                });
+              }
+            });
           }
-
-          $(element).find('.topic').each((j, topicItem) => {
-            const topicLink = $(topicItem).find('a');
-            const topicText = topicLink.text().trim();
-            const topicUrl = topicLink.attr('href');
-
-            if (topicText && topicUrl) {
-              const fullUrl = topicUrl.startsWith('http') ?
-                topicUrl : `https://developer.apple.com${topicUrl}`;
-              markdownContent += `- [${topicText}](${fullUrl})\n`;
-            }
-          });
-
-          markdownContent += `\n`;
         });
       }
     } else {
@@ -410,15 +534,15 @@ export function formatHtmlDocumentation(html: string, url: string) {
       content = content.replace(/\s+/g, ' ').substring(0, 6000);
 
       markdownContent += `## Content\n\n${content}\n\n`;
+      
+      contentBlocks.push({
+        type: "text",
+        text: markdownContent
+      });
     }
 
     return {
-      content: [
-        {
-          type: "text" as const,
-          text: markdownContent,
-        },
-      ],
+      content: contentBlocks,
     };
   } catch (error) {
     console.error('Error formatting HTML documentation:', error);
