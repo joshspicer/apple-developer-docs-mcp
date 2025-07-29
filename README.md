@@ -27,6 +27,16 @@ Research Apple Developer Documentation and research a direct answer to the user 
 
 ## Usage
 
+### Quick Install
+
+Add to VS Code with one click:
+
+[![Add to VS Code](https://img.shields.io/badge/Add%20to-VS%20Code-007ACC?style=for-the-badge&logo=visual-studio-code)](vscode://ms-vscode.copilot-chat/addMcpServer?name=apple-developer-docs&command=npx&args=apple-developer-docs-mcp)
+
+[![Add to VS Code Insiders](https://img.shields.io/badge/Add%20to-VS%20Code%20Insiders-007ACC?style=for-the-badge&logo=visual-studio-code)](vscode-insiders://ms-vscode.copilot-chat/addMcpServer?name=apple-developer-docs&command=npx&args=apple-developer-docs-mcp)
+
+### Manual Install
+
 1. Launch VS Code
 1. `> MCP: Add Server...`
 1. Select npm Package
