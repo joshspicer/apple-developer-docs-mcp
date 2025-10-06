@@ -45,3 +45,28 @@ Research Apple Developer Documentation and research a direct answer to the user 
   }
 }
 ```
+
+## Development
+
+### Running Tests
+
+This project includes live integration tests that verify the MCP server functionality:
+
+```bash
+npm test
+```
+
+The tests verify:
+- Server initialization and MCP protocol communication
+- All tool registrations (search, fetch, download, research)
+- Live API queries to Apple's documentation (when network is available)
+- Error handling for invalid inputs
+- Response structure and content validation
+
+**Note:** The tests are designed to work in both development and CI environments. In network-restricted environments (like GitHub Actions), the tests gracefully handle network failures while still validating error handling and response structure.
+
+### Building
+
+```bash
+npm run build
+```
