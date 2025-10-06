@@ -22,7 +22,11 @@ import { dirname, join } from 'path';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
-// Test utilities
+// Test utilities and constants
+const RESPONSE_POLL_INTERVAL_MS = 100;
+const RESPONSE_TIMEOUT_MS = 30000; // 30 seconds max wait for response
+const CLEANUP_DELAY_MS = 1000;
+
 let testId = 1;
 let testsPassed = 0;
 let testsFailed = 0;
@@ -50,17 +54,23 @@ function sendRequest(server, method, params = {}) {
   console.log(`\n→ Sending request: ${method} (id: ${id})`);
   server.stdin.write(JSON.stringify(request) + '\n');
   
-  return new Promise((resolve) => {
+  return new Promise((resolve, reject) => {
+    const startTime = Date.now();
+    
     const checkResponse = () => {
       if (responses.has(id)) {
         const response = responses.get(id);
         responses.delete(id);
         resolve(response);
+      } else if (Date.now() - startTime > RESPONSE_TIMEOUT_MS) {
+        reject(new Error(`Timeout waiting for response to ${method} (id: ${id})`));
       } else {
-        setTimeout(checkResponse, 100);
+        setTimeout(checkResponse, RESPONSE_POLL_INTERVAL_MS);
       }
     };
-    setTimeout(checkResponse, 100);
+    
+    // Check immediately first, then poll
+    checkResponse();
   });
 }
 
@@ -266,7 +276,7 @@ async function testServer() {
     // Clean up
     setTimeout(() => {
       server.kill();
-    }, 1000);
+    }, CLEANUP_DELAY_MS);
   }
 }
 
