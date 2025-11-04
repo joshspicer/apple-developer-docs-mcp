@@ -48,11 +48,11 @@ class AppleDeveloperDocsMCPServer {
     // Define search_apple_docs tool
     this.server.tool(
       'search_apple_docs',
-      'Search Apple Developer Documentation for APIs, frameworks, guides, samples, and videos',
+      'Find and search Apple Developer Documentation including iOS, macOS, watchOS, tvOS, and visionOS development resources. Use this to discover Swift APIs, Objective-C classes, UIKit components, SwiftUI views, frameworks (like Foundation, CoreData, MapKit, AVFoundation), code samples, WWDC videos, and developer guides. Ideal for looking up any Apple platform API reference, tutorial, or programming guide.',
       {
-        query: z.string().describe('Search query for Apple Developer Documentation'),
+        query: z.string().describe('Search query for Apple Developer Documentation. Examples: "UIViewController", "SwiftUI navigation", "Core Data relationships", "MapKit annotations", "async await Swift", "Combine publishers"'),
         type: z.enum(['all', 'api', 'guide', 'sample', 'video']).default('all')
-          .describe('Type of documentation to search for')
+          .describe('Filter by content type: "api" for API reference docs, "guide" for tutorials and articles, "sample" for code examples, "video" for WWDC sessions, or "all" for everything')
       },
       { readOnlyHint: true },
       async (args) => this.searchAppleDocs(args.query, args.type)
@@ -61,8 +61,8 @@ class AppleDeveloperDocsMCPServer {
     // Define get_apple_doc_content tool
     this.server.tool(
       'get_apple_doc_content',
-      'Get detailed content from a specific Apple Developer Documentation page by recursively fetching and parsing its JSON API data',
-      { url: z.string().describe('URL of the Apple Developer Documentation page') },
+      'Fetch and retrieve the complete, detailed content from a specific Apple Developer Documentation page. Use this to read full API documentation, method signatures, property descriptions, code examples, discussion sections, parameters, return values, and related topics. Extracts structured information including declarations, descriptions, usage examples, and see-also references. Perfect for deep-diving into a specific iOS/macOS API, Swift class, protocol, or framework component after finding it via search.',
+      { url: z.string().describe('Full URL of the Apple Developer Documentation page (e.g., https://developer.apple.com/documentation/swiftui/view, https://developer.apple.com/documentation/uikit/uiviewcontroller)') },
       { readOnlyHint: true },
       async (args) => this.getAppleDocContent(args.url)
     );
@@ -70,8 +70,8 @@ class AppleDeveloperDocsMCPServer {
     // Define download_apple_code_sample tool
     this.server.tool(
       'download_apple_code_sample',
-      'Download, unzip, and analyze Apple Developer code samples. Works with documentation URLs from search_apple_docs results or direct ZIP URLs. When using direct ZIP URLs from get_apple_doc_content results, extract the identifier from sampleCodeDownload.action.identifier and prepend "https://docs-assets.developer.apple.com/published/" to form the complete URL. Sample code is extracted to ~/AppleSampleCode.',
-      { zipUrl: z.string().describe('URL of the Apple Developer documentation page or direct ZIP download URL from docs-assets.developer.apple.com (e.g., https://docs-assets.developer.apple.com/published/f14a9bc447c5/DisplayingOverlaysOnAMap.zip)') },
+      'Download, extract, and analyze Apple\'s official sample code projects and Xcode examples. Use this to get working Swift or Objective-C code samples for iOS, macOS, watchOS, tvOS, or visionOS development. Automatically downloads the ZIP archive, unzips it to ~/AppleSampleCode/, and provides a comprehensive analysis including project structure, key files, README content, and code overview. Ideal for learning implementation patterns, exploring SwiftUI examples, UIKit demos, or any Apple framework sample project. Works with sample code URLs from search results or direct ZIP URLs.',
+      { zipUrl: z.string().describe('URL of the Apple Developer documentation page containing a sample code download, or direct ZIP URL from docs-assets.developer.apple.com (e.g., https://developer.apple.com/documentation/mapkit/..., or https://docs-assets.developer.apple.com/published/xxxxx/SampleName.zip)') },
       { readOnlyHint: false },
       async (args) => this.downloadAppleCodeSample(args.zipUrl)
     );
@@ -79,12 +79,12 @@ class AppleDeveloperDocsMCPServer {
     // Define research tool
     this.server.tool(
       'research_apple_docs',
-      'Research Apple Developer Documentation and research a direct answer to the user question. Combines search, content fetching, and intelligent summarization to provide actionable information tailored to your specific question. Prefer for simple docs lookups and comprehensive answer based on multiple documentation sources in one go.',
+      'Research Apple Developer Documentation with AI-powered analysis to answer your iOS, macOS, Swift, SwiftUI, or Apple development questions. This intelligent tool automatically searches multiple documentation sources, fetches relevant content, and synthesizes a comprehensive, tailored answer to your specific question. Use this for "how to" questions, implementation guidance, best practices, API comparisons, troubleshooting, learning new frameworks, or understanding complex Apple development concepts. Combines search, content retrieval, and smart summarization in one step—ideal for quick answers about UIKit, SwiftUI, Combine, async/await, CoreData, networking, or any Apple platform topic.',
       {
-        docs_query: z.string().describe('Search query for Apple Developer Documentation. Use specific API/class names, leverage Apple terminology, and add platform or technology keywords (e.g., SwiftUI, iOS, macOS) to refine results—enclose phrases in quotes for exact matches and include context (e.g., "delegate pattern") for clarity'),
-        user_question: z.string().describe('Specific question or context for the AI to focus on when summarizing (e.g., "How to implement custom navigation patterns?", "What are the performance best practices?")'),
-        max_docs: z.number().min(1).max(10).default(5).describe('Maximum number of documents to analyze (1-10, default: 5)'),
-        depth: z.enum(['s', 'm', 'l', 'xl']).default('m').describe('Length of the explanation: s=brief, m=moderate, l=detailed, xl=comprehensive')
+        docs_query: z.string().describe('Search keywords for finding relevant Apple Developer Documentation. Use specific API names (e.g., "URLSession", "View", "UITableView"), framework names (e.g., "SwiftUI", "Combine", "CoreData"), or technology terms (e.g., "navigation", "async await", "state management"). Add platform context like "iOS", "macOS", or "watchOS" if needed.'),
+        user_question: z.string().describe('Your specific question about Apple development. Examples: "How do I implement custom navigation in SwiftUI?", "What\'s the difference between @State and @Binding?", "How to fetch data with async/await?", "Best practices for Core Data performance?", "How to create custom UITableViewCells?"'),
+        max_docs: z.number().min(1).max(10).default(5).describe('Maximum number of Apple documentation sources to analyze (1-10, default: 5). Use higher values for complex topics requiring multiple sources.'),
+        depth: z.enum(['s', 'm', 'l', 'xl']).default('m').describe('Answer detail level: "s"=brief summary, "m"=moderate explanation (default), "l"=detailed with examples, "xl"=comprehensive deep-dive')
       },
       { readOnlyHint: true },
       async (args, { sendNotification, _meta }) => this.researchAppleDocs(args.docs_query, args.user_question, args.max_docs, args.depth, sendNotification, _meta?.progressToken)
