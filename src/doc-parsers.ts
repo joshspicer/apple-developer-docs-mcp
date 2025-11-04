@@ -1,4 +1,5 @@
 import * as cheerio from 'cheerio';
+import type { AnyNode } from 'domhandler';
 import { CacheIntegration, CacheIntegrationResult } from './cache/cache-integration.js';
 
 // Global cache integration instance (will be set by the main server)
@@ -101,7 +102,7 @@ function createTopicResourceLinks(identifiers: string[], references: any = {}): 
 /**
  * Create resource links from HTML topic elements
  */
-function createHtmlTopicResourceLinks($: cheerio.CheerioAPI, topicElements: cheerio.Cheerio): ResourceLink[] {
+function createHtmlTopicResourceLinks($: cheerio.CheerioAPI, topicElements: cheerio.Cheerio<AnyNode>): ResourceLink[] {
   const resourceLinks: ResourceLink[] = [];
 
   topicElements.each((_j: number, topicItem: any) => {
